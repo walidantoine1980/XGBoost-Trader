@@ -1127,17 +1127,27 @@ def page_strategy_academy():
     """)
     st.success("C'est pourquoi notre Plan de Trading définit systématiquement un Stop-Loss à 1.5 ATR et un Take-Profit à 3.0 ATR (Ratio de 1:2 strict).")
 
+def get_portfolio_path():
+    # Si le dossier /app/data existe (cas d'un volume monté sur Dokploy), on l'utilise.
+    # Sinon, on sauvegarde localement dans le dossier courant.
+    data_dir = "/app/data"
+    if os.path.exists(data_dir):
+        return os.path.join(data_dir, "portfolio.json")
+    return "portfolio.json"
+
 def load_portfolio():
-    if os.path.exists("portfolio.json"):
+    path = get_portfolio_path()
+    if os.path.exists(path):
         try:
-            with open("portfolio.json", "r") as f:
+            with open(path, "r") as f:
                 return json.load(f)
         except json.JSONDecodeError:
             pass # Fichier vide ou corrompu, on recrée par défaut
     return {"cash": 100000.0, "positions": {}, "history": []}
 
 def save_portfolio(pf):
-    with open("portfolio.json", "w") as f:
+    path = get_portfolio_path()
+    with open(path, "w") as f:
         json.dump(pf, f, indent=4)
 
 def page_paper_trading():
