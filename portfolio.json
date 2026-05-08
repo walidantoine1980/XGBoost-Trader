@@ -1,0 +1,110 @@
+{
+    "cash": 78067.70995903015,
+    "positions": {
+        "RNO.PA": {
+            "qty": 298,
+            "avg_price": 30.020000457763672
+        },
+        "MSFT": {
+            "qty": 12,
+            "avg_price": 429.25
+        },
+        "ENGI.PA": {
+            "qty": 281,
+            "avg_price": 28.100000381469727
+        }
+    },
+    "history": [
+        {
+            "date": "2026-04-29 13:44:05",
+            "action": "BUY",
+            "ticker": "RMS.PA",
+            "qty": 2,
+            "price": 1598.0,
+            "total": 3196.0
+        },
+        {
+            "date": "2026-04-29 13:44:10",
+            "action": "BUY",
+            "ticker": "RMS.PA",
+            "qty": 2,
+            "price": 1598.0,
+            "total": 3196.0
+        },
+        {
+            "date": "2026-04-29 13:56:38",
+            "action": "BUY",
+            "ticker": "RNO.PA",
+            "qty": 149,
+            "price": 30.020000457763672,
+            "total": 4472.980068206787
+        },
+        {
+            "date": "2026-04-29 13:56:45",
+            "action": "BUY",
+            "ticker": "RNO.PA",
+            "qty": 149,
+            "price": 30.020000457763672,
+            "total": 4472.980068206787
+        },
+        {
+            "date": "2026-04-29 13:59:53",
+            "action": "BUY",
+            "ticker": "MSFT",
+            "qty": 12,
+            "price": 429.25,
+            "total": 5151.0
+        },
+        {
+            "date": "2026-04-29 16:27:37",
+            "action": "SELL (Manual)",
+            "ticker": "RMS.PA",
+            "qty": 4,
+            "price": 1605.5,
+            "total": 6422.0,
+            "pnl": 30.0
+        },
+        {
+            "date": "2026-04-29 16:28:52",
+            "action": "BUY",
+            "ticker": "SAN.PA",
+            "qty": 83,
+            "price": 78.12999725341797,
+            "total": 6484.789772033691
+        },
+        {
+            "date": "2026-04-29 16:41:59",
+            "action": "BUY",
+            "ticker": "ENGI.PA",
+            "qty": 281,
+            "price": 28.100000381469727,
+            "total": 7896.100107192993
+        },
+        {
+            "date": "2026-04-29 22:12:19",
+            "action": "SELL (Manual)",
+            "ticker": "SAN.PA",
+            "qty": 83,
+            "price": 78.31999969482422,
+            "total": 6500.55997467041,
+            "pnl": 15.77020263671875
+        },
+        {
+            "date": "2026-04-30 14:13:00",
+            "action": "BUY",
+            "ticker": "OR.PA",
+            "qty": 15,
+            "price": 365.04998779296875,
+            "total": 5475.749816894531
+        },
+        {
+            "date": "2026-05-02 10:33:44",
+            "action": "SELL (Manual)",
+            "ticker": "OR.PA",
+            "qty": 15,
+            "price": 366.04998779296875,
+            "total": 5490.749816894531,
+            "pnl": 15.0
+        }
+    ]
+}

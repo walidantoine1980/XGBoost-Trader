@@ -14,7 +14,7 @@ import os
 import json
 import optuna
 import scipy.stats as si
-from tickers_db import MAJOR_STOCKS
+from tickers_db import MAJOR_STOCKS, PREDEFINED_PORTFOLIOS
 from textblob import TextBlob
 
 @st.cache_data(ttl=3600)
@@ -104,6 +104,7 @@ def add_features(df):
     # Moyennes Mobiles
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
     df['SMA_50'] = df['Close'].rolling(window=50).mean()
+    df['EMA_9'] = df['Close'].ewm(span=9, adjust=False).mean()
     
     # Volatilité
     df['Vol_20'] = df['Returns'].rolling(window=20).std()
@@ -127,13 +128,27 @@ def add_features(df):
     df['BB_Upper'] = df['BB_Mid'] + (df['BB_Std'] * 2)
     df['BB_Lower'] = df['BB_Mid'] - (df['BB_Std'] * 2)
     
-    # ATR
+    # ATR & ADX
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
     low_close = np.abs(df['Low'] - df['Close'].shift())
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
     true_range = np.max(ranges, axis=1)
     df['ATR'] = true_range.rolling(14).mean()
+
+    # ADX (Average Directional Index)
+    plus_dm = df['High'].diff()
+    minus_dm = df['Low'].shift() - df['Low']
+    plus_dm[plus_dm < 0] = 0
+    minus_dm[minus_dm < 0] = 0
+    plus_dm_actual = np.where(plus_dm > minus_dm, plus_dm, 0)
+    minus_dm_actual = np.where(minus_dm > plus_dm, minus_dm, 0)
+    
+    tr14 = true_range.rolling(14).sum()
+    plus_di14 = 100 * (pd.Series(plus_dm_actual, index=df.index).rolling(14).sum() / tr14)
+    minus_di14 = 100 * (pd.Series(minus_dm_actual, index=df.index).rolling(14).sum() / tr14)
+    dx = 100 * np.abs(plus_di14 - minus_di14) / (plus_di14 + minus_di14)
+    df['ADX'] = dx.rolling(14).mean()
 
     # NOUVELLES FEATURES:
     # 1. Volume Ratio
@@ -153,6 +168,10 @@ def add_features(df):
     
     # 5. Largeur des Bandes de Bollinger (BB_Width)
     df['BB_Width'] = (df['BB_Upper'] - df['BB_Lower']) / df['BB_Mid']
+
+    # 6. Approximation VWAP sur 14 jours
+    typical_price = (df['High'] + df['Low'] + df['Close']) / 3
+    df['VWAP'] = (typical_price * df['Volume']).rolling(window=14).sum() / df['Volume'].rolling(window=14).sum()
 
     # Lags
     for i in range(1, 4):
@@ -203,9 +222,9 @@ class MLTrader:
         self.advanced_metrics = metrics
 
     def train(self, data, optimize=False):
-        base_features = ['Returns', 'SMA_20', 'SMA_50', 'Vol_20', 'RSI', 'MACD', 'Signal_Line', 
-                         'BB_Upper', 'BB_Lower', 'BB_Width', 'ATR', 'Volume_Ratio', 'OBV', 'Stoch_K', 'ROC', 
-                         'Lag_1', 'Lag_2', 'Lag_3']
+        base_features = ['Returns', 'SMA_20', 'SMA_50', 'EMA_9', 'Vol_20', 'RSI', 'MACD', 'Signal_Line', 
+                         'BB_Upper', 'BB_Lower', 'BB_Width', 'ATR', 'ADX', 'Volume_Ratio', 'OBV', 'Stoch_K', 'ROC', 
+                         'VWAP', 'Lag_1', 'Lag_2', 'Lag_3']
         macro_features = ['SPY_Return', 'VIX', 'TNX']
         
         features = [f for f in base_features + macro_features if f in data.columns]
@@ -389,9 +408,9 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
     if trader.is_trained:
         last_row = df.iloc[-1:]
         # Default features if loaded from disk without re-training session
-        base_features = ['Returns', 'SMA_20', 'SMA_50', 'Vol_20', 'RSI', 'MACD', 'Signal_Line', 
-                         'BB_Upper', 'BB_Lower', 'BB_Width', 'ATR', 'Volume_Ratio', 'OBV', 'Stoch_K', 'ROC', 
-                         'Lag_1', 'Lag_2', 'Lag_3']
+        base_features = ['Returns', 'SMA_20', 'SMA_50', 'EMA_9', 'Vol_20', 'RSI', 'MACD', 'Signal_Line', 
+                         'BB_Upper', 'BB_Lower', 'BB_Width', 'ATR', 'ADX', 'Volume_Ratio', 'OBV', 'Stoch_K', 'ROC', 
+                         'VWAP', 'Lag_1', 'Lag_2', 'Lag_3']
         macro_features = ['SPY_Return', 'VIX', 'TNX']
         features = [f for f in base_features + macro_features if f in df.columns]
         prob = trader.predict(last_row, features)
@@ -549,6 +568,58 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
                         st.success(f"Position liquidée virtuellement ! {qty} actions {ticker} vendues.")
                     else:
                         st.warning("Aucune position ouverte sur ce titre.")
+
+        # --- NOUVEAU: STRATÉGIE OPTIONS RECOMMANDÉE ---
+        st.divider()
+        st.subheader("🛡️ Stratégie Dérivée Recommandée (Options)")
+        current_price_opt = last_row['Close'].values[0]
+        
+        # Approximation de la volatilité et du taux sans risque
+        vol_opt = df['Returns'].std() * np.sqrt(252)
+        r_opt = 0.05
+        
+        if prob > 0.55:
+            # Recommande un Call ATM à 30 jours
+            strike_opt = round(current_price_opt, 2)
+            t_opt_days = 30
+            price_opt, delta_opt, gamma_opt, theta_opt, vega_opt = black_scholes(current_price_opt, strike_opt, t_opt_days/365, r_opt, vol_opt, "call")
+            st.success(f"**Recommandation : ACHAT de CALL (Pari Haussier avec Levier)**")
+            c_o1, c_o2, c_o3 = st.columns(3)
+            c_o1.markdown(f"""
+            - **Type** : Call
+            - **Strike** : {strike_opt} $
+            - **Expiration** : Dans {t_opt_days} jours
+            """)
+            c_o2.markdown(f"""
+            - **Prime Estimée (Coût)** : {price_opt:.2f} $ par action
+            - **Coût total du contrat (x100)** : {price_opt*100:.2f} $
+            """)
+            c_o3.markdown(f"""
+            - **Delta** : {delta_opt:.3f} (Équivaut à détenir {delta_opt*100:.0f} actions)
+            - **Levier Estimé** : {(current_price_opt * delta_opt) / price_opt:.1f}x
+            """)
+        elif prob < 0.45:
+            # Recommande un Put ATM à 30 jours
+            strike_opt = round(current_price_opt, 2)
+            t_opt_days = 30
+            price_opt, delta_opt, gamma_opt, theta_opt, vega_opt = black_scholes(current_price_opt, strike_opt, t_opt_days/365, r_opt, vol_opt, "put")
+            st.error(f"**Recommandation : ACHAT de PUT (Pari Baissier ou Couverture)**")
+            c_o1, c_o2, c_o3 = st.columns(3)
+            c_o1.markdown(f"""
+            - **Type** : Put
+            - **Strike** : {strike_opt} $
+            - **Expiration** : Dans {t_opt_days} jours
+            """)
+            c_o2.markdown(f"""
+            - **Prime Estimée (Coût)** : {price_opt:.2f} $ par action
+            - **Coût total du contrat (x100)** : {price_opt*100:.2f} $
+            """)
+            c_o3.markdown(f"""
+            - **Delta** : {delta_opt:.3f} (Équivaut à short {-delta_opt*100:.0f} actions)
+            - **Levier Estimé** : {(current_price_opt * abs(delta_opt)) / price_opt:.1f}x
+            """)
+        else:
+            st.info("Aucune stratégie d'options recommandée en régime neutre ou très incertain.")
 
     st.divider()
     tab1, tab2, tab3 = st.tabs(["📊 Graphique Technique", "📉 Métriques de Backtest", "🧠 Importance des Variables"])
@@ -1309,6 +1380,59 @@ def page_options_pricing(tickers):
     g3.metric("Theta (Θ)", f"{theta:.3f} $/jour", help="Érosion du temps. Combien l'option perd de valeur chaque jour qui passe (Time Decay).")
     g4.metric("Vega (ν)", f"{vega/100:.3f}", help="Sensibilité à la volatilité. Si la volatilité augmente de 1%, l'option prend Vega $.")
 
+    # --- GRAPHIQUE DE PAYOFF ---
+    st.divider()
+    st.subheader("📊 Graphique de Payoff à l'expiration")
+    
+    # Générer des prix possibles à l'expiration (±30% autour du strike)
+    prices_range = np.linspace(K * 0.7, K * 1.3, 100)
+    
+    if opt_type.lower() == "call":
+        payoff = np.maximum(prices_range - K, 0) - price
+        breakeven = K + price
+    else:
+        payoff = np.maximum(K - prices_range, 0) - price
+        breakeven = K - price
+        
+    fig_payoff = go.Figure()
+    # Zone de profit (vert) et zone de perte (rouge)
+    fig_payoff.add_trace(go.Scatter(
+        x=prices_range, y=payoff,
+        mode='lines',
+        name='Profit/Perte',
+        line=dict(color='white', width=3),
+        fill='tozeroy',
+        fillcolor='rgba(0, 255, 0, 0.2)' if opt_type.lower() == "call" else 'rgba(255, 0, 0, 0.2)'
+    ))
+    
+    # Ligne 0
+    fig_payoff.add_hline(y=0, line_dash="dash", line_color="gray")
+    
+    # Point de Break-even
+    fig_payoff.add_vline(x=breakeven, line_dash="dash", line_color="yellow", annotation_text=f"Break-even: {breakeven:.2f} $")
+    
+    # Prix actuel (Spot)
+    fig_payoff.add_vline(x=S_input, line_dash="dot", line_color="blue", annotation_text=f"Spot Actuel: {S_input:.2f} $")
+
+    # Mettre en rouge la partie négative
+    payoff_negative = np.where(payoff < 0, payoff, 0)
+    fig_payoff.add_trace(go.Scatter(
+        x=prices_range, y=payoff_negative,
+        mode='none',
+        fill='tozeroy',
+        fillcolor='rgba(255, 0, 0, 0.5)',
+        showlegend=False
+    ))
+    
+    fig_payoff.update_layout(
+        title=f"Profil de Profit & Perte (Achat de {opt_type})",
+        xaxis_title="Prix du sous-jacent à l'expiration ($)",
+        yaxis_title="Profit / Perte ($)",
+        template="plotly_dark",
+        height=500
+    )
+    st.plotly_chart(fig_payoff, use_container_width=True)
+
 def page_options_academy():
     st.title("🎓 Académie : Options & Black-Scholes")
     st.markdown("Comprendre les produits dérivés, l'arme absolue des Quants institutionnels.")
@@ -1361,14 +1485,33 @@ def main():
     st.sidebar.divider()
     st.sidebar.header("⚙️ Configuration Globale")
     
+    # --- NOUVEAU : Sélection rapide de portefeuilles ---
+    portfolio_choice = st.sidebar.selectbox(
+        "💡 Sélection rapide de portefeuille",
+        options=list(PREDEFINED_PORTFOLIOS.keys()),
+        index=0
+    )
+    
+    # Si un portefeuille est choisi, on utilise sa liste. Sinon par défaut Apple.
+    default_selection = PREDEFINED_PORTFOLIOS[portfolio_choice] if portfolio_choice != "Sélection Manuelle" else ["Apple Inc. (US)"]
+    
+    # Filtrer les valeurs par défaut qui sont dans MAJOR_STOCKS pour le multiselect
+    valid_defaults = [s for s in default_selection if s in MAJOR_STOCKS.keys()]
+    
     # Remplacement par Multiselect
     stock_choices = st.sidebar.multiselect(
         "Rechercher une ou plusieurs actions", 
         options=list(MAJOR_STOCKS.keys()), 
-        default=["Apple Inc. (US)"]
+        default=valid_defaults
     )
     
     tickers = []
+    
+    # Ajout silencieux des tickers qui ne sont pas dans MAJOR_STOCKS (ex: Chine)
+    for s in default_selection:
+        if s not in MAJOR_STOCKS.keys():
+            tickers.append(s)
+
     if "--- Saisir manuellement ---" in stock_choices:
         custom_ticker = st.sidebar.text_input("Ticker personnalisé (ex: EPA:MC)", "AAPL")
         tickers.append(convert_google_to_yahoo_ticker(custom_ticker))

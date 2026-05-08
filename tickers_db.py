@@ -587,3 +587,28 @@ MAJOR_STOCKS = {
     "Vonovia (DE)": "FRA:VNA",
     "Zalando (DE)": "FRA:ZAL"
 }
+
+PREDEFINED_PORTFOLIOS = {
+    "Sélection Manuelle": [],
+    "Portefeuille Warren Buffett": [
+        "Apple Inc. (US)", "Bank of America (US)", "American Express (US)", 
+        "Coca-Cola Company (The) (US)", "Chevron Corporation (US)", 
+        "Occidental Petroleum (US)", "Kraft Heinz (US)"
+    ],
+    "Géants de la Tech (Magnificent 7)": [
+        "Apple Inc. (US)", "Microsoft (US)", "Alphabet Inc. (Class A) (US)", 
+        "Amazon (US)", "Nvidia (US)", "Meta Platforms (US)", "Tesla, Inc. (US)"
+    ],
+    "Tendances Positives US (S&P 500 Growth)": [
+        "Nvidia (US)", "Broadcom (US)", "Lilly (Eli) (US)", 
+        "Advanced Micro Devices (US)", "CrowdStrike (US)", "Palantir Technologies (US)"
+    ],
+    "Top Europe (Luxe & Tech)": [
+        "LVMH (FR)", "L'Oréal (FR)", "SAP (DE)", 
+        "Schneider Electric (FR)", "Siemens (DE)", "Hermès (FR)"
+    ],
+    "Tendances Asie / Chine (Tech & EVs)": [
+        # Ajout direct de tickers Yahoo Finance pour la Chine car ils ne sont pas dans MAJOR_STOCKS
+        "BABA", "TCEHY", "BYDDY", "BIDU", "JD"
+    ]
+}
