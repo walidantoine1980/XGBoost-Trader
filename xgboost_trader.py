@@ -1811,36 +1811,100 @@ def page_options_pricing(tickers):
             st.error("Fonds insuffisants dans votre portefeuille d'options virtuel.")
 
 def page_options_academy():
-    st.title("🎓 Académie : Options & Black-Scholes")
-    st.markdown("Comprendre les produits dérivés, l'arme absolue des Quants institutionnels.")
+    st.title("🎓 Académie : Options & Black-Scholes (Niveau Avancé)")
+    st.markdown("Bienvenue dans le module de formation institutionnel sur les produits dérivés. Comprendre les Options, c'est maîtriser la **gestion du risque** et la **création d'Alpha** dans toutes les conditions de marché.")
     
-    st.header("1. Qu'est-ce qu'une Option ?")
+    st.header("📘 Partie 1 : Qu'est-ce qu'une Option ? (Les Fondations)")
     st.markdown("""
-    Une option est un contrat (un produit dérivé) qui vous donne le **droit** (mais non l'obligation) d'acheter (CALL) ou de vendre (PUT) une action à un prix fixé à l'avance (Strike), jusqu'à une date précise (Expiration).
+    Contrairement à une action qui représente une fraction d'entreprise, une Option est un **contrat (Produit Dérivé)**. Sa valeur *dérive* du prix d'un autre actif (le sous-jacent, comme l'action Apple).
     
-    *   **CALL (Option d'Achat)** : Vous pariez que l'action va monter.
-    *   **PUT (Option de Vente)** : Vous pariez que l'action va baisser (ou vous l'utilisez comme assurance pour protéger votre portefeuille d'un krach).
+    Une option vous donne **le DROIT, mais pas l'OBLIGATION**, d'acheter ou de vendre une action à un prix fixé à l'avance, pendant une période donnée.
+    
+    ### 📈 Le CALL (Option d'Achat)
+    **Définition :** Un contrat qui vous donne le droit d'ACHETER l'action à un prix défini (le *Strike*), peu importe le prix réel de l'action sur le marché.
+    
+    > **Exemple Pratique (L'Immobilier) :** 
+    > Vous visitez une maison qui vaut 300 000 €. Vous pensez que le quartier va exploser en valeur grâce à l'arrivée d'une gare. Vous signez une "promesse de vente" avec le propriétaire : vous lui donnez 5 000 € aujourd'hui (la **Prime / Premium**), et en échange, vous avez le droit d'acheter la maison à 300 000 € (le **Strike**) n'importe quand pendant les 3 prochains mois (l'**Expiration**).
+    > - **Scénario Gagnant :** 2 mois plus tard, la gare est annoncée. La maison vaut soudainement 400 000 € ! Grâce à votre contrat, vous l'achetez 300 000 €. Votre profit est de 100 000 € (moins la prime de 5 000 €). Avec seulement 5 000 € risqués, vous gagnez 95 000 €. **C'est la puissance de l'effet de levier.**
+    > - **Scénario Perdant :** Le quartier est inondé. La maison tombe à 200 000 €. Êtes-vous obligé de l'acheter 300 000 € ? NON ! Vous déchirez simplement le contrat. Votre perte maximale est limitée à votre mise initiale : les 5 000 € de Prime.
+    
+    ### 📉 Le PUT (Option de Vente)
+    **Définition :** Un contrat qui vous donne le droit de VENDRE l'action à un prix défini (Strike), même si elle s'est effondrée en bourse.
+    
+    > **Exemple Pratique (L'Assurance Auto) :** 
+    > Vous venez d'acheter une voiture neuve pour 50 000 €. Vous craignez un accident. Vous achetez une assurance (le **PUT**) pour 1 000 €/an (la **Prime**). L'assurance garantit qu'en cas de destruction (le prix de la voiture tombe à 0 €), ils vous rachèteront la voiture à 50 000 € (le **Strike**).
+    > - **En Finance :** Vous possédez 100 actions Nvidia à 1 000 $. Vous avez peur du prochain rapport sur les bénéfices. Vous achetez un PUT Strike 1000$. Si Nvidia s'effondre à 500$, vous êtes protégé : grâce à votre PUT, vous forcez le marché à vous racheter vos actions à 1 000$.
     """)
     
-    st.header("2. Le Modèle de Black-Scholes (1973)")
-    st.markdown("""
-    Avant 1973, personne ne savait comment donner un "juste prix" à une option. Fischer Black et Myron Scholes ont inventé une équation différentielle stochastique qui a révolutionné la finance (et leur a valu le Prix Nobel d'Économie).
+    st.header("🧠 Partie 2 : Le Modèle de Black-Scholes (La Révolution Quant)")
+    st.info("En 1973, Fischer Black, Myron Scholes et Robert Merton publient l'équation qui a valu un Prix Nobel d'Économie et transformé Wall Street.")
     
-    La formule prend 5 ingrédients :
-    1.  Le prix actuel de l'action.
-    2.  Le prix d'exercice (Strike).
-    3.  Le temps restant avant l'expiration.
-    4.  Le taux d'intérêt sans risque (ex: les bons du Trésor).
-    5.  **La Volatilité Implicite** : C'est le paramètre le plus crucial. Plus l'action est nerveuse, plus l'option coûte cher.
+    st.latex(r"C(S, t) = S \cdot N(d_1) - K \cdot e^{-rt} \cdot N(d_2)")
+    st.latex(r"d_1 = \frac{\ln(S/K) + (r + \frac{\sigma^2}{2})t}{\sigma \sqrt{t}} \quad , \quad d_2 = d_1 - \sigma \sqrt{t}")
+    
+    st.markdown("""
+    Avant cette équation, fixer le prix d'une option relevait de la supposition. Cette équation différentielle stochastique permet de calculer le "Juste Prix" (Fair Value) d'une option.
+    
+    **Les 5 Paramètres (Ingrédients) de Black-Scholes :**
+    1.  **$S$ (Spot) :** Le prix *actuel* de l'action. (Ex: Apple est à 150$).
+    2.  **$K$ (Strike) :** Le prix cible d'exercice. (Ex: Call 160$).
+    3.  **$t$ (Time to Expiry) :** Le temps qu'il reste. Plus il y a de temps, plus l'option a des chances d'être gagnante, donc plus elle coûte cher.
+    4.  **$r$ (Risk-free Rate) :** Le taux d'intérêt de l'État (Taux sans risque). C'est le coût de l'argent.
+    5.  **$\sigma$ (Volatilité Implicite) :** L'ingrédient secret. C'est l'estimation de l'amplitude des mouvements futurs. Si l'action bouge de 1% par jour, l'option sera peu chère. Si elle bouge de 10% par jour (comme une Crypto), l'option sera hors de prix, car l'assureur prend d'énormes risques.
     """)
     
-    st.header("3. Les 'Greeks' (La gestion du risque)")
-    st.info("Les professionnels ne regardent pas le prix de l'option, ils regardent ses Greeks.")
+    st.header("🛡️ Partie 3 : La Gestion du Risque (Les 'Greeks')")
     st.markdown("""
-    *   **Delta (Δ)** : L'équivalent en actions. Un Call avec un Delta de 0.5 agit comme si vous possédiez 50 actions réelles.
-    *   **Gamma (Γ)** : L'accélération. C'est la convexité de l'option.
-    *   **Theta (Θ)** : L'hémorragie. Chaque jour qui passe sans que l'action ne bouge vous fait perdre de l'argent. L'usure du temps.
-    *   **Vega (ν)** : L'exposition à la panique. Si le marché panique (le VIX monte), la valeur de votre option augmente, même si l'action ne bouge pas !
+    Un trader institutionnel ne dit jamais "J'ai acheté 10 Calls". Il dit "Je suis long de 1 000 Delta et j'ai un Theta négatif". Les Greeks mesurent la sensibilité de l'option aux changements du marché.
+    """)
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("Δ (Delta) : Le Compteur de Vitesse")
+        st.markdown("""
+        **Que se passe-t-il si l'action monte de 1$ ?**
+        *   Un Call ATM (At-The-Money) a généralement un Delta de 0.50.
+        *   Si l'action Apple monte de 1$, le prix de l'option montera de 0.50$.
+        *   **Concept Institutionnel :** Le Delta représente la "probabilité" perçue par le marché que l'option finisse gagnante. Un Delta de 0.20 signifie qu'il y a environ 20% de chances que l'option ait de la valeur à l'expiration.
+        """)
+        
+        st.subheader("Θ (Theta) : Le Sablier Mortel")
+        st.markdown("""
+        **Que se passe-t-il si une journée passe (sans que le prix ne bouge) ?**
+        *   Le Theta est toujours négatif pour l'acheteur. C'est le loyer quotidien (Time Decay).
+        *   Si Theta = -0.05, votre option perd 0.05$ (donc 5$ par contrat) chaque jour, même le week-end !
+        *   C'est pour cela que 80% des acheteurs d'options perdent de l'argent : le temps joue contre eux.
+        """)
+        
+    with c2:
+        st.subheader("Γ (Gamma) : L'Accélération")
+        st.markdown("""
+        **Que se passe-t-il si l'action accélère violemment ?**
+        *   Le Gamma mesure à quelle vitesse le Delta change.
+        *   Si vous avez un gros Gamma, et que l'action commence à s'envoler, votre Delta (la vitesse) va augmenter exponentiellement, de 0.50 à 0.60, 0.70... Les profits explosent à la hausse. C'est ce qu'on appelle un "Gamma Squeeze".
+        """)
+        
+        st.subheader("ν (Vega) : Le Détecteur de Panique")
+        st.markdown("""
+        **Que se passe-t-il si le marché devient nerveux (Le VIX augmente) ?**
+        *   Si le marché panique, la volatilité augmente. 
+        *   Même si l'action Apple ne bouge pas d'un centime, si la volatilité du marché prend +1%, la valeur de votre option va gonfler du montant du Vega. 
+        *   Acheter des options quand tout est calme et les revendre quand la panique s'installe est une stratégie majeure des Hedge Funds.
+        """)
+        
+    st.divider()
+    st.header("⚔️ Partie 4 : Stratégies XGBoost et Cas d'Usages")
+    st.markdown("""
+    Comment nous couplons l'IA avec les mathématiques dérivées dans cette application :
+    
+    1.  **L'Achat Directionnel (Leverage) :** 
+        L'IA détecte une très forte probabilité de hausse via ses arbres de décision. Au lieu d'acheter 100 actions Apple à 150$ (coût: 15 000$), le trader achète 1 contrat Call (Delta 0.50) à 5$ (coût: 500$). Il obtient la même exposition financière en risquant 30x moins de capital. Si l'IA se trompe, la perte est capée à 500$.
+        
+    2.  **Le Hedging (Couverture) :** 
+        Le trader possède un gros portefeuille d'actions. L'IA indique soudainement que le filtre de régime a cassé la SMA 200 (Marché baissier) et que le sentiment NLP est désastreux. Le trader ne veut pas vendre ses actions pour des raisons fiscales. Il achète des PUTS. Si le marché s'effondre, la perte sur ses actions est mathématiquement remboursée par les gains exponentiels des contrats PUT.
+        
+    3.  **Jouer les résultats d'entreprise (Earnings) :**
+        La veille de l'annonce des résultats de Tesla, la Volatilité Implicite (Vega) est à 150%. Les options coûtent une fortune. L'IA conseille de ne pas acheter la direction, car même si l'action monte légèrement, la volatilité va s'effondrer le lendemain (Le fameux "IV Crush"), détruisant la valeur des contrats Call et Put simultanément. Le trader institutionnel va plutôt "Vendre" (Short) des options à des particuliers pour récolter cette prime surgonflée.
     """)
 
 # --- FONCTION PRINCIPALE ---
