@@ -1906,6 +1906,37 @@ def page_options_academy():
     3.  **Jouer les résultats d'entreprise (Earnings) :**
         La veille de l'annonce des résultats de Tesla, la Volatilité Implicite (Vega) est à 150%. Les options coûtent une fortune. L'IA conseille de ne pas acheter la direction, car même si l'action monte légèrement, la volatilité va s'effondrer le lendemain (Le fameux "IV Crush"), détruisant la valeur des contrats Call et Put simultanément. Le trader institutionnel va plutôt "Vendre" (Short) des options à des particuliers pour récolter cette prime surgonflée.
     """)
+    
+    st.divider()
+    st.header("⏳ Partie 5 : La Vente de Contrats (Devenir l'Assureur)")
+    st.markdown("""
+    En finance, pour chaque acheteur d'Option, il y a un **Vendeur**. 
+    Si 80% des acheteurs d'options perdent de l'argent à cause du temps qui passe (*Theta*), cela signifie que **80% des vendeurs encaissent cet argent**. Vendre des options s'appelle être *short* sur la volatilité.
+    
+    ### 🏦 Pourquoi vendre des Options ? (Le métier de l'assureur)
+    Quand vous Vendez (ou "Écrivez") un contrat CALL ou PUT, c'est **VOUS** qui encaissez la Prime immédiatement. 
+    Vous ne payez rien pour entrer dans la position. En revanche, vous prenez l'**OBLIGATION** de respecter le contrat si l'acheteur décide de l'exercer.
+    
+    *   **Vente de PUT (Bullish/Neutre) :** Vous pariez que l'action va rester stable ou monter. Vous encaissez l'argent aujourd'hui. Si elle s'effondre, vous serez forcé d'acheter les actions au prix du Strike (ce qui peut être désastreux si l'entreprise fait faillite).
+    *   **Vente de CALL (Bearish/Neutre) :** Vous pariez que l'action va rester stable ou baisser. Le risque ici est **théoriquement infini** (Naked Call), car une action peut monter indéfiniment (ex: le Short Squeeze de GameStop).
+    
+    ### ✂️ Peut-on vendre un contrat avant l'expiration ? (Le Marché Secondaire)
+    **OUI, à 100% !** C'est d'ailleurs ce que font 95% des traders professionnels.
+    Vous n'êtes jamais obligé d'attendre la date d'expiration pour réaliser votre profit ou couper votre perte. Les contrats d'options s'échangent sur le marché secondaire (comme les actions).
+    
+    *   **Si vous êtes ACHETEUR (Long) :** Vous avez acheté un Call à 5$. L'action monte violemment le lendemain. Votre Call vaut maintenant 15$. Vous cliquez sur "Vendre pour fermer" (Sell to Close). Vous encaissez 10$ de profit immédiat. Le contrat est transféré à quelqu'un d'autre.
+    *   **Si vous êtes VENDEUR (Short) :** Vous avez vendu un Put et encaissé 5$ de prime (votre profit maximal). Le marché monte, le risque disparaît, le Put ne vaut plus que 1$. Vous pouvez "Racheter pour fermer" (Buy to Close) le contrat pour 1$. Vous avez gagné 4$ de façon sécurisée sans attendre l'expiration.
+    
+    ### 🎯 Les conditions d'une Vente (Short) réussie
+    Pour gagner à coup sûr en tant que vendeur d'options, les Quants cherchent les configurations suivantes :
+    
+    1.  **L'Écrasement de la Volatilité (IV Crush) :** 
+        Vendre quand le VIX est au plus haut (panique générale). Les primes sont hors de prix car la peur est maximale. Dès que l'événement passe, la peur redescend, et la valeur de toutes les options s'effondre (chute du *Vega*). Le vendeur rachète l'option pour des miettes et empoche la différence.
+    2.  **L'Érosion du Temps (Theta Decay) :** 
+        Le temps détruit la valeur d'une option de manière non-linéaire. Une option perd très peu de valeur à 90 jours de l'expiration, mais perd sa valeur de manière exponentielle dans les **30 derniers jours**. Les vendeurs vendent donc massivement des contrats à 45 jours d'expiration, et les rachètent à 21 jours pour capturer la pente la plus raide du *Theta Decay* de façon presque mathématiquement garantie.
+    3.  **Vente Couverte (Covered Call) :** 
+        C'est la stratégie ultime des milliardaires (comme Warren Buffett). Vous possédez 100 actions Apple. Vous vendez un Call très loin au-dessus du prix actuel (Out-of-the-Money). Vous encaissez la prime (comme un dividende synthétique). Si Apple n'atteint jamais ce prix exorbitant, vous gardez vos actions ET la prime. Si Apple atteint ce prix, vous êtes forcé de vendre vos actions, mais avec un énorme bénéfice sur la hausse de l'action de toute façon. C'est du "Gagnant-Gagnant".
+    """)
 
 # --- FONCTION PRINCIPALE ---
 def main():
