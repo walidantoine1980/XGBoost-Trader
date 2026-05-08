@@ -10,7 +10,7 @@ Un terminal quantitatif complet construit avec Python et Streamlit. L'applicatio
 *   **Module de Pricing d'Options (Black-Scholes)** : Calcule le juste prix, les Greeks (Delta, Gamma, Theta, Vega) et génère un graphique de Payoff dynamique.
 *   **Paper Trading Intégré** : Portefeuille virtuel de 100 000 $ pour tester les signaux en direct avec gestion d'historique.
 *   **Risk Parity Portfolio** : Construction de portefeuilles multi-actions pondérés par l'inverse de la volatilité.
-*   **Académie Interactive** : Modules d'apprentissage intégrés (Scrollytelling) pour comprendre les indicateurs, les mathématiques de XGBoost et les produits dérivés.
+*   **Académie Interactive** : Modules d'apprentissage intégrés (Scrollytelling) pour comprendre les indicateurs, les mathématiques de XGBoost, la théorie des produits dérivés (Black-Scholes) et l'histoire de la physique appliquée à la finance quantitative (basé sur le livre de Szpiro).
 
 ## Déploiement via Docker (PaaS / Dokploy / GitHub)
 

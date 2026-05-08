@@ -1836,7 +1836,17 @@ def page_options_academy():
     > - **En Finance :** Vous possédez 100 actions Nvidia à 1 000 $. Vous avez peur du prochain rapport sur les bénéfices. Vous achetez un PUT Strike 1000$. Si Nvidia s'effondre à 500$, vous êtes protégé : grâce à votre PUT, vous forcez le marché à vous racheter vos actions à 1 000$.
     """)
     
-    st.header("🧠 Partie 2 : Le Modèle de Black-Scholes (La Révolution Quant)")
+    st.header("🔬 Partie 2 : L'Héritage Physique (De la Thermodynamique à Wall Street)")
+    st.markdown("""
+    Avant de devenir une formule financière, les fondations de l'évaluation des options trouvent leurs racines dans la physique pure, comme l'explique George Szpiro dans son ouvrage *Pricing the Future*.
+    
+    *   **Louis Bachelier & le Mouvement Brownien (1900) :** Cinq ans avant qu'Albert Einstein ne modélise le mouvement aléatoire des particules dans un fluide (le Mouvement Brownien), le mathématicien français Louis Bachelier a utilisé ces mêmes équations de *Marche Aléatoire* (Random Walk) pour décrire les fluctuations de la Bourse de Paris.
+    *   **Kiyosi Itō (1944) :** Il invente le calcul stochastique (le Lemme d'Itō). Les mathématiques classiques (Newton, Leibniz) ne fonctionnent pas pour des variables totalement aléatoires et pleines de "bruit" comme les cours de la bourse. Itō crée le moteur mathématique permettant d'évaluer l'incertitude continue.
+    *   **Edward Thorp (Années 60) :** Mathématicien de génie, il invente le comptage de cartes pour battre les casinos au Blackjack (voir son livre *Beat the Dealer*). Il applique ensuite ses méthodes probabilistes à Wall Street en inventant la première forme de **Delta-Hedging** (la couverture systématique du risque) pour trader les *Warrants*.
+    *   **Black, Scholes & Merton (1973) :** Ils découvrent la formule qui changera la finance. La révélation mathématique incroyable est que l'équation différentielle stochastique qu'ils ont trouvée pour isoler le risque d'une option est en réalité une variante exacte de **l'Équation de la Chaleur** (Heat Transfer Equation) de Joseph Fourier (1822) en thermodynamique. En finance, le risque (l'incertitude) se dissipe dans le temps exactement comme la chaleur se dissipe dans un barreau de métal qui refroidit !
+    """)
+    
+    st.header("🧠 Partie 3 : Le Modèle de Black-Scholes (La Révolution Quant)")
     st.info("En 1973, Fischer Black, Myron Scholes et Robert Merton publient l'équation qui a valu un Prix Nobel d'Économie et transformé Wall Street.")
     
     st.latex(r"C(S, t) = S \cdot N(d_1) - K \cdot e^{-rt} \cdot N(d_2)")
@@ -1853,7 +1863,7 @@ def page_options_academy():
     5.  **$\sigma$ (Volatilité Implicite) :** L'ingrédient secret. C'est l'estimation de l'amplitude des mouvements futurs. Si l'action bouge de 1% par jour, l'option sera peu chère. Si elle bouge de 10% par jour (comme une Crypto), l'option sera hors de prix, car l'assureur prend d'énormes risques.
     """)
     
-    st.header("🛡️ Partie 3 : La Gestion du Risque (Les 'Greeks')")
+    st.header("🛡️ Partie 4 : La Gestion du Risque (Les 'Greeks')")
     st.markdown("""
     Un trader institutionnel ne dit jamais "J'ai acheté 10 Calls". Il dit "Je suis long de 1 000 Delta et j'ai un Theta négatif". Les Greeks mesurent la sensibilité de l'option aux changements du marché.
     """)
@@ -1893,7 +1903,7 @@ def page_options_academy():
         """)
         
     st.divider()
-    st.header("⚔️ Partie 4 : Stratégies XGBoost et Cas d'Usages")
+    st.header("⚔️ Partie 5 : Stratégies XGBoost et Cas d'Usages")
     st.markdown("""
     Comment nous couplons l'IA avec les mathématiques dérivées dans cette application :
     
@@ -1908,7 +1918,7 @@ def page_options_academy():
     """)
     
     st.divider()
-    st.header("⏳ Partie 5 : La Vente de Contrats (Devenir l'Assureur)")
+    st.header("⏳ Partie 6 : La Vente de Contrats (Devenir l'Assureur)")
     st.markdown("""
     En finance, pour chaque acheteur d'Option, il y a un **Vendeur**. 
     Si 80% des acheteurs d'options perdent de l'argent à cause du temps qui passe (*Theta*), cela signifie que **80% des vendeurs encaissent cet argent**. Vendre des options s'appelle être *short* sur la volatilité.
