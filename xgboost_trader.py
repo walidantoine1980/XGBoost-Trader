@@ -418,7 +418,7 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
     if trader.is_trained:
         last_row = df.iloc[-1:]
         # Default features if loaded from disk without re-training session
-        base_features = ['Returns', 'SMA_20', 'SMA_50', 'EMA_9', 'Vol_20', 'RSI', 'MACD', 'Signal_Line', 
+        base_features = ['Returns', 'SMA_20', 'SMA_50', 'SMA_200', 'EMA_9', 'Vol_20', 'RSI', 'MACD', 'Signal_Line', 
                          'BB_Upper', 'BB_Lower', 'BB_Width', 'ATR', 'ADX', 'Volume_Ratio', 'OBV', 'Stoch_K', 'ROC', 
                          'VWAP', 'Lag_1', 'Lag_2', 'Lag_3']
         macro_features = ['SPY_Return', 'VIX', 'TNX']
@@ -1047,6 +1047,25 @@ def page_xgboost():
     **Comment notre application se protège :**
     Nous utilisons la technique du *Train/Test Split*. L'IA s'entraîne uniquement sur les 80% premiers jours (Train). Ensuite, l'application lui cache les réponses et la force à trader sur les 20% derniers jours (Test). La "Précision" affichée dans le Terminal est sa performance sur ces 20% inconnus. C'est la seule métrique qui compte !
     """)
+    
+    st.header("5. L'Explicabilité (Valeurs SHAP)")
+    st.success("Comment faire confiance à une boîte noire ? En utilisant SHAP (SHapley Additive exPlanations).")
+    st.markdown("""
+    Dans la finance institutionnelle, une IA qui dit "Achetez" sans expliquer pourquoi est inutile. Les régulateurs et les gérants de fonds exigent de la transparence. 
+    
+    C'est pourquoi nous avons intégré **SHAP**, une théorie issue de la théorie des jeux coopératifs (Prix Nobel d'économie). SHAP calcule la contribution *exacte* et mathématique de chaque indicateur technique sur la décision finale du jour.
+    
+    **Dans l'application (Onglet 3 du Terminal) :**
+    Le graphique Waterfall (Cascade) vous montre comment l'IA a réfléchi :
+    - La base part de 0 (Neutre).
+    - Les barres vertes poussent la prédiction vers l'achat (Ex: Le VWAP monte, ça rajoute +0.15 de confiance).
+    - Les barres rouges freinent ou inversent la décision (Ex: Le RSI est en surachat, ça enlève -0.10 de confiance).
+    - Le total donne la probabilité finale d'achat ou de vente.
+    
+    *   **Problème initial :** L'IA dit "Achat Fort avec 75% de confiance", mais on ne sait pas pourquoi. Le graphe "Importance Globale" montre l'importance sur l'ensemble de l'historique, pas celle du jour.
+    *   **Solution :** Intégrer la librairie shap (SHapley Additive exPlanations), le standard de l'industrie.
+    *   **Implémentation :** Pour le "Plan de Trading du Jour", nous générons un graphique SHAP (Waterfall plot) qui explique mathématiquement la prédiction du jour. Par exemple : "Signal d'Achat généré par : VWAP (+0.15) et MACD (+0.10), mais ralenti par RSI (-0.05)". Cela donne une fiabilité et une confiance énormes au trader.
+    """)
 
 def page_news():
     st.title("📰 Académie Quantitative : NLP & Sentiment de Marché")
@@ -1244,16 +1263,23 @@ def page_strategy_academy():
     """)
     st.warning("🚨 Règle d'Or : Coupez vos pertes rapidement. Ne laissez jamais un trade détruire votre capital, car les mathématiques jouent contre vous.")
 
-    st.header("3. La Règle des 2% et la Taille de Position")
+    st.header("3. Le Money Management Dynamique (Critère de Kelly)")
     st.markdown("""
-    Comment ne jamais se ruiner ? En utilisant la **Règle des 2%** de risque maximum.
+    Les traders débutants utilisent la **Règle des 2%** fixe (risquer 2% par trade maximum). Les fonds quantitatifs utilisent la formule probabiliste du **Critère de Kelly**.
     
-    Sur n'importe quel trade, si votre Stop-Loss est touché, vous ne devez perdre que 2% de votre capital total. 
+    La formule de Kelly calcule exactement quel pourcentage de votre capital vous devez risquer pour maximiser votre croissance à long terme, en se basant sur la performance historique de votre IA.
     
-    **Calcul de la taille de position** :
-    $$ Taille = \\frac{Capital \\times 2\\%}{Prix_{Entrée} - Prix_{StopLoss}} $$
+    $$ Kelly\\,\\% = W - \\frac{1 - W}{R} $$
+    *(Où **W** = Win Rate de l'IA, et **R** = Ratio Gain/Perte moyen)*
     
-    L'application calcule cela automatiquement pour vous dans le "Plan de Trading du Jour".
+    **Exemple :** Si l'IA a raison 60% du temps (W=0.6) et que lorsqu'elle gagne, elle gagne deux fois plus qu'elle ne perd (R=2). Kelly suggère de risquer exactement **40%** !
+    
+    **Dans l'application :**
+    Le plein Kelly étant mathématiquement très agressif, nous utilisons un **Half-Kelly** (Kelly divisé par 2) plafonné à **5%** maximum par sécurité. 
+    
+    *   **Problème initial :** Le risque était fixé arbitrairement à 2% par trade, ce qui est une règle pour débutants.
+    *   **Solution :** Utiliser la formule du Critère de Kelly. C'est l'équation mathématique utilisée par les plus grands fonds (comme Renaissance Technologies) pour maximiser la croissance du capital à long terme.
+    *   **Implémentation :** L'application calcule le Win Rate et le Risk/Reward historiques du modèle XGBoost, et en déduit le pourcentage exact du capital à risquer. Si le modèle est extrêmement performant sur une action, l'algorithme augmente la taille de position ; s'il est moyen, il la réduit.
     """)
 
     st.header("4. Le Ratio Risque/Récompense (Risk/Reward)")
@@ -1266,6 +1292,22 @@ def page_strategy_academy():
     *   Bénéfice total : **+600$** alors que vous avez eu tort la majorité du temps !
     """)
     st.success("C'est pourquoi notre Plan de Trading définit systématiquement un Stop-Loss à 1.5 ATR et un Take-Profit à 3.0 ATR (Ratio de 1:2 strict).")
+
+    st.header("5. Le Filtre de Régime (SMA 200)")
+    st.markdown("""
+    C'est la règle de base la plus sous-estimée des marchés : **Ne jamais trader contre la tendance de fond.**
+    
+    Même la meilleure IA du monde produira de faux signaux d'achat en plein Krach boursier ("Rattraper un couteau qui tombe"). Pour éviter cela, nous avons intégré un **Filtre de Régime**.
+    
+    **La SMA 200 (Moyenne Mobile à 200 jours) :**
+    Elle représente la tendance institutionnelle à long terme (environ 1 an de trading).
+    - **Si Prix > SMA 200** : Nous sommes en *Régime Haussier* (Bull Market). Les signaux d'achat sont validés à pleine confiance.
+    - **Si Prix < SMA 200** : Nous sommes en *Régime Baissier* (Bear Market). Si l'IA veut acheter, le signal est dégradé en **"ACHAT RISQUÉ (Contre-Tendance)"**. Vous êtes prévenu du danger structurel de la position.
+    
+    *   **Problème initial :** Le modèle essayait de trader de la même façon pendant les marchés haussiers et baissiers (seul le VIX l'arrêtait en cas de panique extrême).
+    *   **Solution :** Ajouter un indicateur de tendance de fond (la SMA 200 jours).
+    *   **Implémentation :** C'est une règle d'or institutionnelle. L'IA sait désormais dans quel "Régime" se trouve l'action. Si le prix est sous la SMA 200 (Régime Baissier Long Terme), les signaux d'Achat sont filtrés ou ignorés pour éviter de "rattraper un couteau qui tombe" (faux signaux), augmentant massivement la précision globale (accuracy) du backtest.
+    """)
 
 def get_portfolio_path():
     # Si le dossier /app/data existe (cas d'un volume monté sur Dokploy), on l'utilise.
