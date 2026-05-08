@@ -14,6 +14,7 @@ import os
 import json
 import optuna
 import scipy.stats as si
+import shap
 from tickers_db import MAJOR_STOCKS, PREDEFINED_PORTFOLIOS
 from textblob import TextBlob
 
@@ -104,6 +105,7 @@ def add_features(df):
     # Moyennes Mobiles
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
     df['SMA_50'] = df['Close'].rolling(window=50).mean()
+    df['SMA_200'] = df['Close'].rolling(window=200).mean()
     df['EMA_9'] = df['Close'].ewm(span=9, adjust=False).mean()
     
     # Volatilité
@@ -204,7 +206,15 @@ class MLTrader:
         
         winning_days = len(strat_returns[strat_returns > 0])
         total_trades_days = len(strat_returns[strat_returns != 0])
-        metrics['Win Rate'] = winning_days / total_trades_days if total_trades_days > 0 else 0
+        win_rate = winning_days / total_trades_days if total_trades_days > 0 else 0
+        metrics['Win Rate'] = win_rate
+        
+        # --- NEW: Kelly Criterion ---
+        avg_win = strat_returns[strat_returns > 0].mean() if winning_days > 0 else 0
+        avg_loss = abs(strat_returns[strat_returns < 0].mean()) if (total_trades_days - winning_days) > 0 else 1
+        win_loss_ratio = avg_win / avg_loss if avg_loss > 0 else 0
+        kelly_pct = win_rate - ((1 - win_rate) / win_loss_ratio) if win_loss_ratio > 0 else 0
+        metrics['Kelly %'] = kelly_pct if kelly_pct > 0 else 0
         
         cum_returns = (1 + strat_returns).cumprod()
         rolling_max = cum_returns.cummax()
@@ -222,7 +232,7 @@ class MLTrader:
         self.advanced_metrics = metrics
 
     def train(self, data, optimize=False):
-        base_features = ['Returns', 'SMA_20', 'SMA_50', 'EMA_9', 'Vol_20', 'RSI', 'MACD', 'Signal_Line', 
+        base_features = ['Returns', 'SMA_20', 'SMA_50', 'SMA_200', 'EMA_9', 'Vol_20', 'RSI', 'MACD', 'Signal_Line', 
                          'BB_Upper', 'BB_Lower', 'BB_Width', 'ATR', 'ADX', 'Volume_Ratio', 'OBV', 'Stoch_K', 'ROC', 
                          'VWAP', 'Lag_1', 'Lag_2', 'Lag_3']
         macro_features = ['SPY_Return', 'VIX', 'TNX']
@@ -455,13 +465,27 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
         c1, c2, c3, c4 = st.columns([1, 1, 1.5, 1])
         with c1:
             st.subheader("🔮 Signal")
+            current_price = last_row['Close'].values[0]
+            sma_200 = last_row['SMA_200'].values[0] if 'SMA_200' in last_row.columns else current_price
+            
+            # --- FILTRE DE RÉGIME (SMA 200) ---
+            regime_bull = current_price > sma_200
+            
             if prob == 0.0:
                 st.markdown("<span class='signal-sell'>⚠️ KRACH (VIX>30) - CASH</span>", unsafe_allow_html=True)
             elif prob > 0.55:
-                st.markdown("<span class='signal-buy'>🟢 ACHAT FORT</span>", unsafe_allow_html=True)
+                if regime_bull:
+                    st.markdown("<span class='signal-buy'>🟢 ACHAT FORT</span>", unsafe_allow_html=True)
+                    st.write("Contexte : Régime Haussier (>SMA 200)")
+                else:
+                    st.markdown("<span style='color:orange; font-weight:bold; font-size:20px;'>🟡 ACHAT RISQUÉ</span>", unsafe_allow_html=True)
+                    st.write("⚠️ Contre-Tendance (<SMA 200)")
                 st.write(f"Confiance IA : {prob:.1%}")
             elif prob < 0.45:
-                st.markdown("<span class='signal-sell'>🔴 VENTE / CASH</span>", unsafe_allow_html=True)
+                if not regime_bull:
+                    st.markdown("<span class='signal-sell'>🔴 VENTE / SHORT</span>", unsafe_allow_html=True)
+                else:
+                    st.markdown("<span class='signal-sell'>🔴 VENTE / CASH</span>", unsafe_allow_html=True)
                 st.write(f"Confiance Baisse : {1-prob:.1%}")
             else:
                 st.write("⚪ **NEUTRE** / Attente")
@@ -477,15 +501,23 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
                 st.info(f"Neutre ({avg_pol:.2f})")
                 
         with c3:
-            st.subheader("🛡️ Gestion du Risque (Max 2%)")
-            current_price = last_row['Close'].values[0]
+            st.subheader("🛡️ Gestion du Risque (Kelly)")
             current_atr = last_row['ATR'].values[0] if 'ATR' in last_row.columns else current_price * 0.02
             
-            stop_loss = current_price - (1.5 * current_atr)
-            take_profit = current_price + (3 * current_atr)
-            risk_per_share = current_price - stop_loss
+            stop_loss = current_price - (1.5 * current_atr) if prob > 0.5 else current_price + (1.5 * current_atr)
+            take_profit = current_price + (3 * current_atr) if prob > 0.5 else current_price - (3 * current_atr)
+            risk_per_share = abs(current_price - stop_loss)
             
-            max_loss = initial_capital * 0.02
+            # --- CRITÈRE DE KELLY (Half-Kelly) ---
+            kelly_pct = getattr(trader, 'advanced_metrics', {}).get('Kelly %', 0)
+            if kelly_pct > 0:
+                risk_pct = min(kelly_pct / 2, 0.05) # Max 5% du compte
+                st.info(f"Half-Kelly Actif : {risk_pct*100:.2f}% (Plein Kelly: {kelly_pct*100:.2f}%)")
+            else:
+                risk_pct = 0.01 # 1% par défaut si Kelly=0
+                st.warning("Kelly incalculable. Risque défaut: 1%")
+                
+            max_loss = initial_capital * risk_pct
             position_size = int(max_loss / risk_per_share) if risk_per_share > 0 else 0
             total_investment = position_size * current_price
             
@@ -717,6 +749,43 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
     with tab3:
         st.subheader("🤖 Dans le cerveau de XGBoost")
         if trader.is_trained:
+            # --- NOUVEAU : SHAP WATERFALL ---
+            st.markdown("### 🔬 Explicabilité de la décision du jour (SHAP)")
+            try:
+                explainer = shap.TreeExplainer(trader.model)
+                shap_values = explainer.shap_values(last_row[features])
+                
+                if isinstance(shap_values, list):
+                    sv = shap_values[1][0]
+                elif len(shap_values.shape) > 1:
+                    sv = shap_values[0]
+                else:
+                    sv = shap_values
+                
+                shap_df = pd.DataFrame({'Feature': features, 'Contribution': sv})
+                shap_df = shap_df.sort_values(by='Contribution', key=abs, ascending=True).tail(10)
+                
+                fig_shap = go.Figure(go.Waterfall(
+                    name="SHAP", orientation="h",
+                    measure=["relative"] * len(shap_df),
+                    y=shap_df['Feature'],
+                    x=shap_df['Contribution'],
+                    text=[f"{x:+.3f}" for x in shap_df['Contribution']],
+                    textposition="outside",
+                    connector={"line": {"color": "rgb(63, 63, 63)"}},
+                    decreasing={"marker": {"color": "red"}},
+                    increasing={"marker": {"color": "green"}}
+                ))
+                fig_shap.update_layout(
+                    title="Impact des variables sur le dernier signal",
+                    template="plotly_dark", height=400, margin=dict(l=20, r=20, t=40, b=20)
+                )
+                st.plotly_chart(fig_shap, use_container_width=True)
+            except Exception as e:
+                st.error(f"Erreur lors du calcul SHAP : {e}")
+
+            st.divider()
+            st.subheader("Importance Globale des Variables")
             df_imp = trader.feature_importances
             fig_imp = go.Figure(go.Bar(
                 x=df_imp['Importance'], y=df_imp['Feature'], orientation='h',
