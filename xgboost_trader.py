@@ -16,7 +16,18 @@ import optuna
 import scipy.stats as si
 import shap
 from tickers_db import MAJOR_STOCKS, PREDEFINED_PORTFOLIOS
-from textblob import TextBlob
+import torch
+from transformers import pipeline
+
+@st.cache_resource(show_spinner="Chargement du modèle Deep Learning NLP (FinBERT)...")
+def load_finbert():
+    try:
+        # Configuration sur CPU ou GPU selon la disponibilité
+        device = 0 if torch.cuda.is_available() else -1
+        return pipeline("sentiment-analysis", model="ProsusAI/finbert", device=device)
+    except Exception:
+        return None
+
 
 @st.cache_data(ttl=3600)
 def get_macro_data(period, interval):
@@ -40,27 +51,43 @@ def get_macro_data(period, interval):
 
 @st.cache_data(ttl=3600)
 def get_news_sentiment(ticker):
-    """Analyse le sentiment des dernières actualités via NLP (TextBlob)"""
+    """Analyse le sentiment des dernières actualités via Deep Learning (FinBERT)"""
     try:
         stock = yf.Ticker(ticker)
         news = stock.news
         if not news:
             return 0, []
-        
+            
+        finbert = load_finbert()
+        if finbert is None:
+            return 0, [] # Fallback si le modèle crash
+            
         polarities = []
         articles = []
         for n in news[:5]:
             content = n.get('content', {})
             title = content.get('title', '')
-            blob = TextBlob(title)
-            pol = blob.sentiment.polarity
-            polarities.append(pol)
-            articles.append({'title': title, 'link': content.get('clickThroughUrl', ''), 'polarity': pol})
-            
+            if title:
+                result = finbert(title)[0]
+                label = result['label']
+                score = result['score']
+                
+                # Traduire le label FinBERT en polarité
+                if label == 'positive':
+                    pol = score
+                elif label == 'negative':
+                    pol = -score
+                else:
+                    pol = 0.0
+                    
+                polarities.append(pol)
+                articles.append({'title': title, 'link': content.get('clickThroughUrl', ''), 'polarity': pol})
+                
         avg_polarity = np.mean(polarities) if polarities else 0
         return avg_polarity, articles
     except Exception:
         return 0, []
+
 
 
 # Création du dossier pour les modèles
@@ -428,16 +455,10 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
         
         st.divider()
         # --- NLP Sentiment Logic ---
-        st.subheader("📰 Filtre de Sentiment Actuel (NLP)")
+        st.subheader("📰 Filtre de Sentiment Actuel (FinBERT)")
         try:
-            news = yf.Ticker(ticker).news
-            if news:
-                sentiments = []
-                for n in news[:10]: # Top 10 news
-                    blob = TextBlob(n['title'])
-                    sentiments.append(blob.sentiment.polarity)
-                avg_sentiment = np.mean(sentiments)
-                
+            avg_sentiment, articles = get_news_sentiment(ticker)
+            if articles:
                 sentiment_text = "Neutre"
                 color = "gray"
                 if avg_sentiment > 0.15:
@@ -447,7 +468,7 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
                     sentiment_text = "Négatif 🔴"
                     color = "red"
                     
-                st.markdown(f"Score de Sentiment TextBlob : **<span style='color:{color}'>{avg_sentiment:+.2f} ({sentiment_text})</span>**", unsafe_allow_html=True)
+                st.markdown(f"Score de Sentiment FinBERT : **<span style='color:{color}'>{avg_sentiment:+.2f} ({sentiment_text})</span>**", unsafe_allow_html=True)
                 
                 # Alerte de contradiction
                 if prob > 0.55 and avg_sentiment < -0.2:
@@ -867,18 +888,72 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
         else:
             st.warning("Entraînez le modèle pour débloquer l'analyse du cerveau de l'IA.")
 
+def get_black_litterman_weights(returns_df, market_weights, views_dict, tau=0.05, risk_aversion=2.5):
+    """
+    Calcule les poids optimaux via le modèle de Black-Litterman.
+    returns_df: DataFrame des rendements historiques de chaque action
+    market_weights: Poids d'équilibre (ex: Risk Parity ou Market Cap)
+    views_dict: Dictionnaire {ticker: expected_excess_return} issu de XGBoost
+    """
+    try:
+        tickers = list(returns_df.columns)
+        N = len(tickers)
+        
+        # 1. Matrice de Covariance et Rendements d'équilibre (Prior)
+        Sigma = returns_df.cov().values * 252
+        W_mkt = np.array([market_weights[t] for t in tickers])
+        Pi = risk_aversion * Sigma.dot(W_mkt)
+        
+        # 2. Matrices des Vues (P, Q, Omega)
+        P = np.eye(N)
+        Q = np.array([views_dict.get(t, 0.0) for t in tickers])
+        
+        # Si aucune vue n'est forte, on retourne les poids d'équilibre
+        if np.all(Q == 0.0):
+            return market_weights
+            
+        # Incertitude des vues (Méthode de He-Litterman proportionnelle à la variance)
+        Omega = np.diag(np.diag(tau * P.dot(Sigma).dot(P.T)))
+        
+        # 3. Posterior (Rendements ajustés)
+        tau_Sigma_inv = np.linalg.inv(tau * Sigma)
+        Omega_inv = np.linalg.inv(Omega)
+        
+        left_term = np.linalg.inv(tau_Sigma_inv + P.T.dot(Omega_inv).dot(P))
+        right_term = tau_Sigma_inv.dot(Pi) + P.T.dot(Omega_inv).dot(Q)
+        
+        posterior_expected_returns = left_term.dot(right_term)
+        
+        # 4. Nouveaux poids optimisés
+        W_bl = np.linalg.inv(risk_aversion * Sigma).dot(posterior_expected_returns)
+        
+        # Pas de vente à découvert pour notre portefeuille long-only, on ramène à 0
+        W_bl = np.clip(W_bl, 0.0, None)
+        
+        # Normalisation pour que la somme = 1 (100% d'allocation)
+        if np.sum(W_bl) > 0:
+            W_bl = W_bl / np.sum(W_bl)
+        else:
+            W_bl = W_mkt # Fallback si problème d'inversion
+            
+        return {tickers[i]: W_bl[i] for i in range(N)}
+    except Exception as e:
+        return market_weights # Fallback en cas d'erreur de matrice singulière
+
 def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_model):
-    st.subheader("🌐 Mode Portefeuille Multi-Actions (Risk Parity)")
+    st.subheader("🌐 Mode Portefeuille Institutionnel (Black-Litterman)")
     st.markdown("""
-    Ce mode utilise une approche inspirée de la **Théorie Moderne du Portefeuille de Markowitz**. 
-    Le capital n'est pas divisé équitablement, mais alloué de manière **inversement proportionnelle à la volatilité** de chaque actif (Risk Parity). 
-    *Un actif très volatil recevra moins de capital qu'un actif très stable, pour lisser le risque global.*
+    Ce mode combine **deux piliers de la finance quantitative** :
+    1. **Le Prior (L'Équilibre)** : L'allocation initiale est gérée par la Parité des Risques (Inverse Volatilité) pour lisser le risque statistique.
+    2. **Les Vues (L'Alpha XGBoost)** : Le modèle de *Black-Litterman* (Goldman Sachs) prend l'équilibre initial et le "tord" mathématiquement en fonction de la conviction de notre IA sur chaque action.
     """)
     
-    if st.button("🧠 Entraîner et Simuler le Portefeuille", use_container_width=True):
-        with st.status("Analyse des Risques & Entraînement...") as status:
+    if st.button("🧠 Entraîner et Optimiser le Portefeuille", use_container_width=True):
+        with st.status("Analyse Macro & Entraînement des modèles...") as status:
             data_dict = {}
+            returns_dict = {}
             volatility_dict = {}
+            
             for t in tickers:
                 st.write(f"Récupération pour {t}...")
                 df_raw = yf.download(t, period=period, interval=interval, progress=False)
@@ -886,19 +961,17 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
                     if isinstance(df_raw.columns, pd.MultiIndex):
                         df_raw.columns = df_raw.columns.droplevel(1)
                     data_dict[t] = df_raw
-                    # Volatilité historique
-                    ret = df_raw['Close'].pct_change().std()
-                    volatility_dict[t] = ret if ret > 0 else 0.01
+                    ret = df_raw['Close'].pct_change().dropna()
+                    returns_dict[t] = ret
+                    vol_hist = ret.std()
+                    volatility_dict[t] = vol_hist if vol_hist > 0 else 0.01
 
-            # Calcul des poids (Inverse Volatility)
+            # --- 1. Poids d'Équilibre (Risk Parity) ---
             sum_inv_vol = sum(1/v for v in volatility_dict.values())
-            weights = {t: (1/v)/sum_inv_vol for t, v in volatility_dict.items()}
+            market_weights = {t: (1/v)/sum_inv_vol for t, v in volatility_dict.items()}
             
-            st.write("📈 **Pondérations Calculées (Risk Parity)** :")
-            for t, w in weights.items():
-                st.write(f"- **{t}** : {w*100:.1f}% ({initial_capital * w:,.2f} $)")
-                st.session_state[f"port_capital_{t}"] = initial_capital * w
-            
+            # --- 2. Entraînement IA & Génération des Vues ---
+            views_dict = {}
             for t, df_raw in data_dict.items():
                 st.write(f"Entraînement de l'IA pour {t}...")
                 macro_df = get_macro_data(period, interval)
@@ -906,9 +979,34 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
                 if macro_df is not None:
                     df = df.join(macro_df, how='left').ffill().dropna()
                 trader = MLTrader()
-                trader.train(df, optimize=optimize_model)
+                features = trader.train(df, optimize=optimize_model)
                 st.session_state[f"port_trader_{t}"] = trader
-            status.update(label="✅ Portefeuille Institutionnel généré !", state="complete")
+                
+                # Prédiction actuelle pour le Black-Litterman (La Vue)
+                last_row = df.iloc[-1:]
+                prob = trader.predict(last_row, features)
+                # Transformation de la probabilité en rendement excédentaire attendu
+                # Ex: prob=0.60 => (0.60 - 0.50) * 0.50 = +0.05 (+5% d'excès)
+                expected_excess = (prob - 0.50) * 0.50 if prob is not None else 0.0
+                views_dict[t] = expected_excess
+                
+            # --- 3. Optimisation Black-Litterman ---
+            st.write("🧮 Optimisation de la Matrice de Covariance (Black-Litterman)...")
+            returns_df = pd.DataFrame(returns_dict).dropna()
+            
+            # Application du modèle
+            bl_weights = get_black_litterman_weights(returns_df, market_weights, views_dict)
+            
+            st.divider()
+            st.write("📈 **Pondérations Finales (Black-Litterman)** :")
+            
+            for t, w in bl_weights.items():
+                m_w = market_weights[t]
+                diff = w - m_w
+                st.write(f"- **{t}** : {w*100:.1f}% ({initial_capital * w:,.2f} $) | *(Prior: {m_w*100:.1f}%, Ajustement IA: {diff*100:+.1f}%)*")
+                st.session_state[f"port_capital_{t}"] = initial_capital * w
+                
+            status.update(label="✅ Portefeuille Institutionnel généré et optimisé !", state="complete")
             
     is_ready = all(f"port_trader_{t}" in st.session_state for t in tickers)
     
@@ -1138,32 +1236,30 @@ def page_xgboost():
     """)
 
 def page_news():
-    st.title("📰 Académie Quantitative : NLP & Sentiment de Marché")
-    st.markdown("L'analyse technique mathématique ne peut pas tout prévoir. Parfois, un simple tweet ou un scandale médiatique fait s'effondrer une action en 5 minutes. C'est là qu'intervient le NLP.")
+    st.title("📰 Académie Quantitative : NLP Profond & Sentiment de Marché")
+    st.markdown("L'analyse technique mathématique ne peut pas tout prévoir. Parfois, un simple tweet ou un scandale médiatique fait s'effondrer une action en 5 minutes. C'est là qu'intervient le NLP Profond.")
     
-    st.header("Qu'est-ce que le NLP ?")
+    st.header("Qu'est-ce que le NLP Profond ?")
     st.markdown("""
-    Le **Natural Language Processing (NLP)**, ou Traitement du Langage Naturel, permet à un ordinateur de "lire" et de "comprendre" le texte humain.
+    Le **Natural Language Processing (NLP)** permet à un ordinateur de "lire" le texte. Historiquement, on utilisait des dictionnaires de mots (comme la librairie *TextBlob*).
     
-    Dans notre application, nous utilisons la librairie d'Intelligence Artificielle **TextBlob**. Son rôle est de lire les actualités et de leur attribuer une *Polarité* mathématique.
+    Aujourd'hui, l'élite financière utilise des réseaux de neurones complexes : les **Transformers**.
+    Dans notre application, nous utilisons **FinBERT**, un modèle d'Intelligence Artificielle de pointe (Hugging Face) entraîné *spécifiquement* sur le jargon financier de Wall Street, des rapports de la SEC et des actualités économiques.
     """)
     
-    st.header("La Mécanique de la Polarité")
+    st.header("La Supériorité de FinBERT")
     st.info("La Polarité est un score allant de **-1.0 (Désespoir absolu)** à **+1.0 (Euphorie totale)**.")
     st.markdown("""
-    TextBlob possède un dictionnaire massif de mots pré-évalués. 
-    - Le mot *"effondrement"* vaut -0.8. 
-    - Le mot *"record"* vaut +0.7. 
-    - Le mot *"bénéfice"* vaut +0.5.
+    Contrairement aux anciens modèles qui ne comprenaient pas le contexte (le mot "dette" était toujours négatif, même dans "réduction de la dette"), FinBERT utilise un mécanisme d'**Attention** pour lire la phrase dans sa globalité.
     
-    Lorsque l'application télécharge les articles du jour sur Yahoo Finance, elle calcule la moyenne de tous les mots contenus dans les gros titres pour vous donner la "Météo Psychologique" de l'action.
+    Lorsque l'application télécharge les articles du jour sur Yahoo Finance, le réseau de neurones les analyse et retourne une probabilité mathématique (Positif, Négatif, Neutre), que nous convertissons en un score global pour vous donner la "Météo Psychologique" de l'action.
     """)
     
     st.header("L'Approche Hybride du Trader Pro")
-    st.warning("**XGBoost (Maths)** + **TextBlob (Émotions)** = **Edge (Avantage)**")
+    st.warning("**XGBoost (Maths/Technique)** + **FinBERT (Fondamental/Émotions)** = **Edge (Avantage Institutionnel)**")
     st.markdown("""
-    1. Si XGBoost dit ACHAT et que les News disent POSITIF -> **Achat Fort (Haute conviction)**.
-    2. Si XGBoost dit ACHAT mais que les News disent NÉGATIF -> **Danger !** Le modèle mathématique ne sait peut-être pas que le PDG vient de démissionner. Il vaut mieux ignorer le signal.
+    1. Si XGBoost dit ACHAT et que FinBERT dit POSITIF -> **Achat Fort (Haute conviction)**.
+    2. Si XGBoost dit ACHAT mais que FinBERT dit NÉGATIF -> **Danger !** Le modèle mathématique ne sait peut-être pas que l'entreprise fait l'objet d'une enquête pour fraude. Il vaut mieux ignorer le signal quantitatif.
     """)
 
 def format_large_number(num):
@@ -1377,6 +1473,18 @@ def page_strategy_academy():
     *   **Problème initial :** Le modèle essayait de trader de la même façon pendant les marchés haussiers et baissiers (seul le VIX l'arrêtait en cas de panique extrême).
     *   **Solution :** Ajouter un indicateur de tendance de fond (la SMA 200 jours).
     *   **Implémentation :** C'est une règle d'or institutionnelle. L'IA sait désormais dans quel "Régime" se trouve l'action. Si le prix est sous la SMA 200 (Régime Baissier Long Terme), les signaux d'Achat sont filtrés ou ignorés pour éviter de "rattraper un couteau qui tombe" (faux signaux), augmentant massivement la précision globale (accuracy) du backtest.
+    """)
+
+    st.header("6. L'Optimisation de Portefeuille (Modèle de Black-Litterman)")
+    st.markdown("""
+    Créé par Fischer Black (Prix Nobel) et Robert Litterman chez Goldman Sachs en 1990, c'est **LE** modèle institutionnel de gestion de portefeuille.
+    
+    L'approche naïve consiste à tout mettre à parts égales. L'approche classique de Markowitz échoue souvent car elle est trop sensible aux petites erreurs statistiques.
+    
+    **Le génie de Black-Litterman :**
+    1. **Le Prior (L'Équilibre) :** Le modèle suppose d'abord que le marché est efficient. Nous utilisons l'Inverse Volatilité (Risk Parity) comme point d'ancrage "sain" et stable.
+    2. **Les Vues (L'Alpha) :** Le gérant de fonds a des convictions. Dans notre cas, **la conviction, c'est notre IA (XGBoost)**. Les prédictions mathématiques (ex: 65% de probabilité de hausse) sont converties en "Rendement Excédentaire Attendu".
+    3. **Le Posterior (L'Optimisation Bayésienne) :** Le modèle mathématique "tord" les poids de base du portefeuille. Si l'IA est agressive sur Apple, le modèle surpondère Apple, tout en respectant la variance globale (le risque). C'est ce qui tourne sous le capot du "Mode Portefeuille Institutionnel".
     """)
 
 def get_portfolio_path():

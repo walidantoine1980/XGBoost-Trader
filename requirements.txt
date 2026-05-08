@@ -9,3 +9,5 @@ optuna>=3.5.0
 scipy>=1.11.0
 textblob>=0.17.0
 shap>=0.44.0
+transformers>=4.30.0
+torch>=2.0.0
