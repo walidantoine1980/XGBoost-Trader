@@ -348,7 +348,7 @@ class MLTrader:
         
         return test_data
 
-    def train(self, data, optimize=False, use_wfa=False, wfa_splits=5, ticker_for_export="UNKNOWN"):
+    def train(self, data, optimize=False, use_wfa=False, wfa_train_window="5Y", wfa_step="6M", wfa_start_date=None, wfa_end_date=None):
         base_features = ['Returns', 'SMA_20', 'SMA_50', 'SMA_200', 'EMA_9', 'Vol_20', 'RSI', 'MACD', 'Signal_Line', 
                          'BB_Upper', 'BB_Lower', 'BB_Width', 'ATR', 'ADX', 'Volume_Ratio', 'OBV', 'Stoch_K', 'ROC', 
                          'VWAP', 'Lag_1', 'Lag_2', 'Lag_3']
@@ -358,92 +358,19 @@ class MLTrader:
         X = data[features]
         y = data['Target']
         
-        # 4. Walk-Forward Validation
-        from sklearn.model_selection import TimeSeriesSplit
-        
-        if use_wfa:
-            st.info(f"🔄 Mode Walk-Forward Analysis (WFA) activé avec {wfa_splits} intervalles.")
-            tscv = TimeSeriesSplit(n_splits=wfa_splits)
-            out_of_sample_preds = []
-            out_of_sample_indices = []
-            
-            for split_idx, (train_index, test_index) in enumerate(tscv.split(X)):
-                X_train_cv, X_test_cv = X.iloc[train_index], X.iloc[test_index]
-                y_train_cv, y_test_cv = y.iloc[train_index], y.iloc[test_index]
-                
-                if optimize:
-                    def objective(trial):
-                        param = {
-                            'n_estimators': trial.suggest_int('n_estimators', 50, 200),
-                            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),
-                            'max_depth': trial.suggest_int('max_depth', 3, 7)
-                        }
-                        model = xgb.XGBClassifier(**param, objective='binary:logistic', random_state=42)
-                        model.fit(X_train_cv, y_train_cv)
-                        return accuracy_score(y_test_cv, model.predict(X_test_cv))
-                    study = optuna.create_study(direction='maximize')
-                    optuna.logging.set_verbosity(optuna.logging.WARNING)
-                    study.optimize(objective, n_trials=5)
-                    best_params = study.best_params
-                    xgb_cv = xgb.XGBClassifier(**best_params, objective='binary:logistic', random_state=42)
-                else:
-                    xgb_cv = xgb.XGBClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, objective='binary:logistic', random_state=42)
-                
-                rf_cv = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
-                lgb_cv = lgb.LGBMClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, random_state=42, verbose=-1)
-                model_cv = VotingClassifier(
-                    estimators=[('xgb', xgb_cv), ('rf', rf_cv), ('lgb', lgb_cv)],
-                    voting='soft'
-                )
-                model_cv.fit(X_train_cv, y_train_cv)
-                probs = model_cv.predict_proba(X_test_cv)[:, 1]
-                
-                out_of_sample_preds.extend(probs)
-                out_of_sample_indices.extend(test_index)
-                
-            test_indices = sorted(list(set(out_of_sample_indices)))
-            test_data = data.iloc[test_indices].copy()
-            
-            prob_series = pd.Series(index=X.index[out_of_sample_indices], data=out_of_sample_preds)
-            test_data['Prob'] = prob_series
-            
-            # Export WFA
-            os.makedirs("wfa_outputs", exist_ok=True)
-            export_df = test_data.copy()
-            export_df['Target_Label'] = y.iloc[test_indices]
-            export_df['WFA_Signal'] = np.where(export_df['Prob'] > 0.55, 1, 0)
-            
-            # On essaie d'ajouter les informations NLP (finBERT) si dispo, au moins pour tracer
-            try:
-                avg_pol, _ = get_news_sentiment(ticker_for_export)
-                export_df['FinBERT_Sentiment'] = avg_pol
-            except:
-                pass
-                
-            export_path = f"wfa_outputs/WFA_{ticker_for_export}_{datetime.now().strftime('%Y%m%d')}.csv"
-            export_df.to_csv(export_path)
-            st.toast(f"Fichier WFA généré : {export_path}", icon="📊")
-            
-            # Modèle final
-            split = int(len(X) * 0.8)
-            X_train, y_train = X.iloc[:split], y.iloc[:split]
-            self.model = model_cv # garde le dernier modele du split
-            self.model.fit(X_train, y_train)
-            
-            test_data['Signal'] = np.where(test_data['Prob'] > 0.55, 1, 0)
-            self.accuracy = accuracy_score(test_data['Target'], test_data['Signal'])
-            
-        else:
+        if not use_wfa:
             split = int(len(X) * 0.8)
             X_train, X_test = X.iloc[:split], X.iloc[split:]
             y_train, y_test = y.iloc[:split], y.iloc[split:]
             
+            # 4. Walk-Forward Validation (basique)
+            from sklearn.model_selection import TimeSeriesSplit
             tscv = TimeSeriesSplit(n_splits=3)
             
             if optimize:
                 # 1. Hyper-Optimisation avec Optuna (Bayésienne)
                 optuna.logging.set_verbosity(optuna.logging.WARNING)
-    
+
                 def objective(trial):
                     param = {
                         'n_estimators': trial.suggest_int('n_estimators', 50, 300),
@@ -456,7 +383,7 @@ class MLTrader:
                     from sklearn.model_selection import cross_val_score
                     score = cross_val_score(model, X_train, y_train, cv=tscv, scoring='accuracy').mean()
                     return score
-    
+
                 # Création de l'étude Optuna
                 study = optuna.create_study(direction='maximize')
                 study.optimize(objective, n_trials=10) # 10 essais pour un bon compromis vitesse/précision
@@ -472,36 +399,145 @@ class MLTrader:
             else:
                 self.model.fit(X_train, y_train)
             
+            # Récupération de l'importance des variables (Moyenne des 3 modèles)
+            importances = np.mean([est.feature_importances_ for est in self.model.estimators_], axis=0)
+            self.feature_importances = pd.DataFrame(
+                {'Feature': features, 'Importance': importances}
+            ).sort_values(by='Importance', ascending=True)
+            
+            # Backtest
             test_data = data.iloc[split:].copy()
             test_data['Prob'] = self.model.predict_proba(X_test)[:, 1]
+            
+            # Signal de base
             test_data['Signal'] = np.where(test_data['Prob'] > 0.55, 1, 0)
+            
+            # 3. Filtre Macro-économique (Régime de Krach)
+            if 'VIX' in test_data.columns:
+                # Si le VIX dépasse 30, on force le passage en cash (0)
+                test_data.loc[test_data['VIX'] > 30, 'Signal'] = 0
+                
+            # 4. Moteur de Backtest Événementiel (Event-Driven)
+            test_data = self.run_event_driven_backtest(test_data)
+            
+            self.backtest_results = test_data
             self.accuracy = accuracy_score(y_test, self.model.predict(X_test))
+            self.calculate_advanced_metrics(test_data)
+            self.is_trained = True
+            return features
             
-        # Récupération de l'importance des variables (Moyenne des 3 modèles)
-        importances = np.mean([est.feature_importances_ for est in self.model.estimators_], axis=0)
-        self.feature_importances = pd.DataFrame(
-            {'Feature': features, 'Importance': importances}
-        ).sort_values(by='Importance', ascending=True)
-        
-        # 3. Filtre Macro-économique (Régime de Krach)
-        if 'VIX' in test_data.columns:
-            # Si le VIX dépasse 30, on force le passage en cash (0)
-            test_data.loc[test_data['VIX'] > 30, 'Signal'] = 0
+        else:
+            # --- WALK FORWARD ANALYSIS DYNAMIQUE ---
+            st.info(f"🔄 Exécution Walk-Forward Analysis (WFA) : {wfa_start_date.strftime('%Y-%m-%d')} à {wfa_end_date.strftime('%Y-%m-%d')}")
             
-        # 4. Moteur de Backtest Événementiel (Event-Driven)
-        # Remplace le backtest vectoriel naïf par une simulation tick-par-tick (Slippage, Latence, Commissions)
-        test_data = self.run_event_driven_backtest(test_data)
-        
-        self.backtest_results = test_data
-        self.calculate_advanced_metrics(test_data)
-        self.is_trained = True
-        return features
+            window_map = {"2Y": pd.DateOffset(years=2), "5Y": pd.DateOffset(years=5), "7Y": pd.DateOffset(years=7)}
+            step_map = {"1M": pd.DateOffset(months=1), "2M": pd.DateOffset(months=2), "6M": pd.DateOffset(months=6), "1Y": pd.DateOffset(years=1)}
+            
+            train_window = window_map.get(wfa_train_window, pd.DateOffset(years=5))
+            step_size = step_map.get(wfa_step, pd.DateOffset(months=6))
+            
+            current_date = pd.to_datetime(wfa_start_date)
+            if current_date.tzinfo is None and data.index.tzinfo is not None:
+                current_date = current_date.tz_localize(data.index.tzinfo)
+            end_date = pd.to_datetime(wfa_end_date)
+            if end_date.tzinfo is None and data.index.tzinfo is not None:
+                end_date = end_date.tz_localize(data.index.tzinfo)
+                
+            all_test_data = []
+            all_importances = []
+            y_test_all = []
+            y_pred_all = []
+            
+            # Progress bar for WFA
+            progress_bar = st.progress(0)
+            total_days = (end_date - current_date).days
+            start_days = total_days
+            
+            while current_date < end_date:
+                train_start = current_date - train_window
+                test_end = current_date + step_size
+                
+                mask_train = (data.index >= train_start) & (data.index < current_date)
+                mask_test = (data.index >= current_date) & (data.index < test_end)
+                
+                X_train, y_train = X[mask_train], y[mask_train]
+                X_test, y_test_slice = X[mask_test], y[mask_test]
+                
+                if len(X_train) < 50 or len(X_test) == 0:
+                    current_date += step_size
+                    continue
+                    
+                self.xgb_model = xgb.XGBClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, objective='binary:logistic', random_state=42)
+                self.rf_model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
+                self.lgb_model = lgb.LGBMClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, random_state=42, verbose=-1)
+                
+                self.model = VotingClassifier(
+                    estimators=[('xgb', self.xgb_model), ('rf', self.rf_model), ('lgb', self.lgb_model)],
+                    voting='soft'
+                )
+                self.model.fit(X_train, y_train)
+                
+                prob = self.model.predict_proba(X_test)[:, 1]
+                pred = self.model.predict(X_test)
+                
+                test_slice = data[mask_test].copy()
+                test_slice['Prob'] = prob
+                test_slice['Signal'] = np.where(test_slice['Prob'] > 0.55, 1, 0)
+                if 'VIX' in test_slice.columns:
+                    test_slice.loc[test_slice['VIX'] > 30, 'Signal'] = 0
+                    
+                all_test_data.append(test_slice)
+                y_test_all.extend(y_test_slice.values)
+                y_pred_all.extend(pred)
+                
+                imp = np.mean([est.feature_importances_ for est in self.model.estimators_], axis=0)
+                all_importances.append(imp)
+                
+                current_date += step_size
+                
+                if start_days > 0:
+                    prog = min(1.0, 1.0 - ((end_date - current_date).days / start_days))
+                    progress_bar.progress(prog)
+            
+            progress_bar.empty()
+                
+            if len(all_test_data) == 0:
+                st.error("WFA : Pas assez de données pour générer un backtest. Élargissez la période téléchargée ou réduisez la fenêtre d'entraînement.")
+                return features
+                
+            final_test_data = pd.concat(all_test_data)
+            
+            avg_importances = np.mean(all_importances, axis=0)
+            self.feature_importances = pd.DataFrame(
+                {'Feature': features, 'Importance': avg_importances}
+            ).sort_values(by='Importance', ascending=True)
+            
+            final_test_data = self.run_event_driven_backtest(final_test_data)
+            self.backtest_results = final_test_data
+            self.accuracy = accuracy_score(y_test_all, y_pred_all)
+            self.calculate_advanced_metrics(final_test_data)
+            self.is_trained = True
+            
+            # Le dernier modèle de la boucle WFA est sauvegardé comme demandé
+            import joblib
+            joblib.dump(self.model, "ia_model.joblib")
+                
+            return features
 
     def predict(self, last_row, features):
         if not self.is_trained:
             return None
+            
+        # Utilisation de ia_model.joblib si disponible (dernier pas WFA)
+        import os
+        import joblib
+        if os.path.exists("ia_model.joblib"):
+            model_to_use = joblib.load("ia_model.joblib")
+        else:
+            model_to_use = self.model
+            
         X_input = last_row[features].values.reshape(1, -1)
-        prob = self.model.predict_proba(X_input)[0][1]
+        prob = model_to_use.predict_proba(X_input)[0][1]
         # 3. Coupe-circuit Macro en direct
         if 'VIX' in last_row.columns and last_row['VIX'].values[0] > 30:
             return 0.0 # Force la vente/cash
@@ -553,7 +589,7 @@ def convert_google_to_yahoo_ticker(ticker):
 
 # --- MODES D'AFFICHAGE ---
 
-def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
+def run_single_mode(ticker, period, interval, initial_capital, optimize_model, use_wfa=False, wfa_train_window="5Y", wfa_step="6M", wfa_start_date=None, wfa_end_date=None):
     st.subheader(f"Analyse Individuelle : {ticker}")
     model_path = f"models/{ticker}_model.pkl"
     
@@ -576,19 +612,12 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
     if macro_df is not None:
         df = df.join(macro_df, how='left').ffill().dropna()
     
-    st.divider()
-    c_wfa1, c_wfa2 = st.columns([1, 2])
-    with c_wfa1:
-        use_wfa = st.checkbox("Activer Walk-Forward Analysis (WFA)", value=False, help="Génère un test plus robuste sur plusieurs périodes et exporte les résultats en CSV.")
-    with c_wfa2:
-        wfa_splits = st.slider("Nombre d'intervalles WFA", min_value=2, max_value=10, value=5) if use_wfa else 5
-
     col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
     
     with col1:
         if st.button("🧠 Entraîner l'IA sur cette action", use_container_width=True):
             with st.status("Entraînement en cours...") as status:
-                features = trader.train(df, optimize=optimize_model, use_wfa=use_wfa, wfa_splits=wfa_splits, ticker_for_export=ticker)
+                features = trader.train(df, optimize=optimize_model, use_wfa=use_wfa, wfa_train_window=wfa_train_window, wfa_step=wfa_step, wfa_start_date=wfa_start_date, wfa_end_date=wfa_end_date)
                 st.session_state[f"features_{ticker}"] = features
                 status.update(label="✅ Modèle entraîné !", state="complete")
                 
@@ -1129,7 +1158,7 @@ def get_black_litterman_weights(returns_df, market_weights, views_dict, tau=0.05
     except Exception as e:
         return market_weights # Fallback en cas d'erreur de matrice singulière
 
-def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_model):
+def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_model, use_wfa=False, wfa_train_window="5Y", wfa_step="6M", wfa_start_date=None, wfa_end_date=None):
     st.subheader("🌐 Mode Portefeuille Institutionnel (Black-Litterman)")
     st.markdown("""
     Ce mode combine **deux piliers de la finance quantitative** :
@@ -1137,13 +1166,6 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
     2. **Les Vues (L'Alpha XGBoost)** : Le modèle de *Black-Litterman* (Goldman Sachs) prend l'équilibre initial et le "tord" mathématiquement en fonction de la conviction de notre IA sur chaque action.
     """)
     
-    st.divider()
-    c_wfa1, c_wfa2 = st.columns([1, 2])
-    with c_wfa1:
-        use_wfa = st.checkbox("Activer Walk-Forward Analysis (WFA) pour l'ensemble du portefeuille", value=False)
-    with c_wfa2:
-        wfa_splits = st.slider("Nombre d'intervalles WFA", min_value=2, max_value=10, value=5, key="wfa_slider_port") if use_wfa else 5
-
     if st.button("🧠 Entraîner et Optimiser le Portefeuille", use_container_width=True):
         with st.status("Analyse Macro & Entraînement des modèles...") as status:
             data_dict = {}
@@ -1175,7 +1197,7 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
                 if macro_df is not None:
                     df = df.join(macro_df, how='left').ffill().dropna()
                 trader = MLTrader()
-                features = trader.train(df, optimize=optimize_model, use_wfa=use_wfa, wfa_splits=wfa_splits, ticker_for_export=t)
+                features = trader.train(df, optimize=optimize_model, use_wfa=use_wfa, wfa_train_window=wfa_train_window, wfa_step=wfa_step, wfa_start_date=wfa_start_date, wfa_end_date=wfa_end_date)
                 st.session_state[f"port_trader_{t}"] = trader
                 
                 # Prédiction actuelle pour le Black-Litterman (La Vue)
@@ -2557,17 +2579,25 @@ def main():
         st.title("🚀 XGBoost Stock Trader Pro")
         st.sidebar.header("Paramètres IA")
         
-        period = st.sidebar.selectbox("Période d'historique", ["2y", "5y", "10y", "max"], index=0)
+        period = st.sidebar.selectbox("Période d'historique", ["2y", "5y", "10y", "max"], index=3)
         interval = st.sidebar.selectbox("Intervalle", ["1d", "1wk"], index=0)
         initial_capital = st.sidebar.number_input("Capital Initial Total ($)", min_value=100, max_value=1000000, value=10000, step=100)
         optimize_model = st.sidebar.checkbox("🧠 Auto-Optimisation (Optuna Bayésien)")
         
+        st.sidebar.divider()
+        st.sidebar.header("Logique Walk-Forward (WFA)")
+        use_wfa = st.sidebar.checkbox("Activer Walk-Forward Analysis (WFA)")
+        wfa_train_window = st.sidebar.selectbox("Fenêtre Entraînement", ["2Y", "5Y", "7Y"], index=1)
+        wfa_step = st.sidebar.selectbox("Pas Avancement", ["1M", "2M", "6M", "1Y"], index=2)
+        wfa_start_date = st.sidebar.date_input("WFA Début", value=datetime(2019, 1, 1))
+        wfa_end_date = st.sidebar.date_input("WFA Fin", value=datetime(2026, 5, 9))
+        
         if len(tickers) == 0:
             st.warning("👈 Veuillez sélectionner au moins une action dans le menu latéral.")
         elif len(tickers) == 1:
-            run_single_mode(tickers[0], period, interval, initial_capital, optimize_model)
+            run_single_mode(tickers[0], period, interval, initial_capital, optimize_model, use_wfa, wfa_train_window, wfa_step, wfa_start_date, wfa_end_date)
         else:
-            run_portfolio_mode(tickers, period, interval, initial_capital, optimize_model)
+            run_portfolio_mode(tickers, period, interval, initial_capital, optimize_model, use_wfa, wfa_train_window, wfa_step, wfa_start_date, wfa_end_date)
             
     elif menu == "🕹️ Paper Trading (Virtuel)":
         page_paper_trading()
