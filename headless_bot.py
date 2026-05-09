@@ -73,12 +73,8 @@ def run_trading_job():
             # Dans xgboost_trader, on utilise split("[")[-1].replace("]", "") si c'est formaté
             # Pour simplifier, on trouve le symbole directement
             
-            # Recherche du symbole dans MAJOR_STOCKS
-            symbol = None
-            for key, val in MAJOR_STOCKS.items():
-                if val == ticker:
-                    symbol = key
-                    break
+            # Recherche du symbole dans MAJOR_STOCKS (ticker est la clé)
+            symbol = MAJOR_STOCKS.get(ticker)
             
             if not symbol:
                 # Fallback

@@ -2332,7 +2332,7 @@ def page_bot_config():
     st.header("1. Cibles d'Analyse Nocturne")
     selected_tickers = st.multiselect(
         "Quelles actions le bot doit-il analyser chaque nuit ?",
-        options=list(MAJOR_STOCKS.values()),
+        options=list(MAJOR_STOCKS.keys())[1:],
         default=config.get("tickers", ["Apple Inc. (US)"])
     )
     
