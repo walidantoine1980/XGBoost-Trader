@@ -8,6 +8,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.metrics import classification_report, accuracy_score
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+import lightgbm as lgb
 import time
 import pickle
 import os
@@ -214,12 +216,13 @@ def add_features(df):
 # --- MOTEUR MACHINE LEARNING ---
 class MLTrader:
     def __init__(self):
-        self.model = xgb.XGBClassifier(
-            n_estimators=100,
-            learning_rate=0.05,
-            max_depth=5,
-            objective='binary:logistic',
-            random_state=42
+        self.xgb_model = xgb.XGBClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, objective='binary:logistic', random_state=42)
+        self.rf_model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
+        self.lgb_model = lgb.LGBMClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, random_state=42, verbose=-1)
+        
+        self.model = VotingClassifier(
+            estimators=[('xgb', self.xgb_model), ('rf', self.rf_model), ('lgb', self.lgb_model)],
+            voting='soft'
         )
         self.is_trained = False
         self.accuracy = 0.0
@@ -256,7 +259,30 @@ class MLTrader:
         downside_std = downside_returns.std()
         metrics['Sortino Ratio'] = (mean_ret / downside_std * np.sqrt(252)) if downside_std > 0 else 0
         
+        # --- NOUVEAU: VaR & CVaR ---
+        if not strat_returns.empty:
+            var_95 = np.percentile(strat_returns.dropna(), 5)
+            metrics['VaR (95%)'] = var_95
+            metrics['CVaR'] = strat_returns[strat_returns <= var_95].mean()
+        else:
+            metrics['VaR (95%)'] = 0
+            metrics['CVaR'] = 0
+            
+        # --- NOUVEAU: Probabilité de Ruine (Monte Carlo) ---
+        metrics['Probabilité de Ruine'] = self.run_monte_carlo(strat_returns.dropna())
+        
         self.advanced_metrics = metrics
+
+    def run_monte_carlo(self, returns, num_simulations=1000, ruin_threshold=0.8):
+        """Simule 1000 chemins de rendements aléatoires pour évaluer le risque de perdre 20% du capital"""
+        if len(returns) == 0:
+            return 0.0
+        n_days = len(returns)
+        # Tirage au sort avec remise
+        simulations = np.random.choice(returns, size=(num_simulations, n_days), replace=True)
+        cum_simulations = np.cumprod(1 + simulations, axis=1)
+        ruin_cases = np.any(cum_simulations < ruin_threshold, axis=1)
+        return float(np.mean(ruin_cases))
 
     def run_event_driven_backtest(self, test_data, initial_capital=100000.0):
         """
@@ -361,15 +387,20 @@ class MLTrader:
             study.optimize(objective, n_trials=10) # 10 essais pour un bon compromis vitesse/précision
             
             best_params = study.best_params
-            self.model = xgb.XGBClassifier(**best_params, objective='binary:logistic', random_state=42)
+            self.xgb_model = xgb.XGBClassifier(**best_params, objective='binary:logistic', random_state=42)
+            self.model = VotingClassifier(
+                estimators=[('xgb', self.xgb_model), ('rf', self.rf_model), ('lgb', self.lgb_model)],
+                voting='soft'
+            )
             self.model.fit(X_train, y_train)
-            st.toast(f"Optimisation Optuna terminée : {best_params}", icon="🧬")
+            st.toast(f"Optimisation Optuna (XGBoost) terminée : {best_params}", icon="🧬")
         else:
             self.model.fit(X_train, y_train)
         
-        # Récupération de l'importance des variables
+        # Récupération de l'importance des variables (Moyenne des 3 modèles)
+        importances = np.mean([est.feature_importances_ for est in self.model.estimators_], axis=0)
         self.feature_importances = pd.DataFrame(
-            {'Feature': features, 'Importance': self.model.feature_importances_}
+            {'Feature': features, 'Importance': importances}
         ).sort_values(by='Importance', ascending=True)
         
         # Backtest
@@ -632,29 +663,34 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
             if prob > 0.55 and position_size > 0:
                 if st.button("🚀 Exécuter sur le Paper Trading"):
                     pf = load_portfolio()
-                    cost = position_size * current_price
-                    if pf['cash'] >= cost:
-                        pf['cash'] -= cost
+                    # Simulation Event-Driven (Slippage + Commissions)
+                    exec_price = current_price * 1.0010  # +0.10% Slippage
+                    cost = position_size * exec_price
+                    commission = cost * 0.0005           # +0.05% Frais
+                    total_cost = cost + commission
+                    
+                    if pf['cash'] >= total_cost:
+                        pf['cash'] -= total_cost
                         # Update positions
                         if ticker in pf['positions']:
                             old_qty = pf['positions'][ticker]['qty']
                             old_price = pf['positions'][ticker]['avg_price']
                             new_qty = old_qty + position_size
-                            new_price = ((old_qty * old_price) + cost) / new_qty
+                            new_price = ((old_qty * old_price) + total_cost) / new_qty
                             pf['positions'][ticker] = {'qty': new_qty, 'avg_price': new_price}
                         else:
-                            pf['positions'][ticker] = {'qty': position_size, 'avg_price': current_price}
+                            pf['positions'][ticker] = {'qty': position_size, 'avg_price': exec_price}
                         
                         pf['history'].append({
                             'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             'action': 'BUY',
                             'ticker': ticker,
                             'qty': position_size,
-                            'price': current_price,
-                            'total': cost
+                            'price': exec_price,
+                            'total': total_cost
                         })
                         save_portfolio(pf)
-                        st.success(f"Ordre exécuté virtuellement ! {position_size} actions {ticker} achetées.")
+                        st.success(f"Ordre exécuté virtuellement ! {position_size} actions {ticker} achetées (Slippage et Frais inclus).")
                     else:
                         st.error("Fonds insuffisants dans le Paper Trading.")
             elif prob < 0.45:
@@ -662,20 +698,26 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
                     pf = load_portfolio()
                     if ticker in pf['positions'] and pf['positions'][ticker]['qty'] > 0:
                         qty = pf['positions'][ticker]['qty']
-                        revenue = qty * current_price
-                        pf['cash'] += revenue
+                        
+                        # Simulation Event-Driven (Slippage + Commissions)
+                        exec_price = current_price * 0.9990 # -0.10% Slippage
+                        gross_revenue = qty * exec_price
+                        commission = gross_revenue * 0.0005 # -0.05% Frais
+                        net_revenue = gross_revenue - commission
+                        
+                        pf['cash'] += net_revenue
                         pf['history'].append({
                             'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             'action': 'SELL',
                             'ticker': ticker,
                             'qty': qty,
-                            'price': current_price,
-                            'total': revenue,
-                            'pnl': revenue - (qty * pf['positions'][ticker]['avg_price'])
+                            'price': exec_price,
+                            'total': net_revenue,
+                            'pnl': net_revenue - (qty * pf['positions'][ticker]['avg_price'])
                         })
                         del pf['positions'][ticker]
                         save_portfolio(pf)
-                        st.success(f"Position liquidée virtuellement ! {qty} actions {ticker} vendues.")
+                        st.success(f"Position liquidée virtuellement ! {qty} actions {ticker} vendues (Slippage et Frais déduits).")
                     else:
                         st.warning("Aucune position ouverte sur ce titre.")
 
@@ -852,6 +894,15 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
                 m5.metric("Alpha", f"{diff_profit:,.2f} $", delta="Marché bat l'IA", delta_color="inverse")
                 
             st.divider()
+            n1, n2, n3 = st.columns(3)
+            var_pct = adv.get('VaR (95%)', 0) * 100
+            cvar_pct = adv.get('CVaR', 0) * 100
+            prob_ruin = adv.get('Probabilité de Ruine', 0) * 100
+            n1.metric("VaR Historique (95%)", f"{var_pct:.2f}%", help="Perte maximale journalière dans 95% des cas.")
+            n2.metric("CVaR (Expected Shortfall)", f"{cvar_pct:.2f}%", help="Perte moyenne lorsque la VaR est dépassée (Risque extrême).")
+            n3.metric("Probabilité de Ruine (MC)", f"{prob_ruin:.2f}%", help="Probabilité de perdre 20% du capital (Bootstrap Monte Carlo).")
+                
+            st.divider()
             st.subheader("🎲 Simulation de Monte Carlo (Value at Risk)")
             st.markdown("Projection probabiliste sur 30 jours (1000 scénarios) pour mesurer le risque extrême.")
             
@@ -900,7 +951,7 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
             # --- NOUVEAU : SHAP WATERFALL ---
             st.markdown("### 🔬 Explicabilité de la décision du jour (SHAP)")
             try:
-                explainer = shap.TreeExplainer(trader.model)
+                explainer = shap.TreeExplainer(trader.xgb_model)
                 shap_values = explainer.shap_values(last_row[features])
                 
                 if isinstance(shap_values, list):
@@ -1558,6 +1609,39 @@ def page_strategy_academy():
     *Conclusion : Toutes les métriques de l'application (Sharpe, Drawdown, P&L) sont calculées sur cette base hyper-réaliste. Si l'algorithme est rentable ici, son espérance de gain dans le monde réel est mathématiquement robuste.*
     """)
 
+    st.header("8. Value at Risk (VaR) & Expected Shortfall (CVaR)")
+    st.markdown("""
+    Le Drawdown est une bonne métrique, mais il regarde le passé. Les banques centrales et les régulateurs exigent que les Hedge Funds mesurent leur risque futur : c'est la **Value at Risk (VaR)**.
+    
+    *   **VaR (95%) :** Elle répond à la question *"Dans 95% des scénarios normaux, quelle est la perte journalière maximale que je risque de subir ?"* Si la VaR est de 2%, vous êtes confiant à 95% que votre portefeuille ne baissera pas de plus de 2% demain.
+    *   **CVaR (Conditional VaR / Expected Shortfall) :** C'est le risque extrême (les 5% restants, les "Cygnes Noirs"). Elle répond à la question *"Si le pire arrive et que la VaR est dépassée, quelle sera ma perte moyenne ?"*.
+    
+    Notre plateforme quantifie désormais ces deux valeurs en temps réel.
+    """)
+
+    st.header("9. L'Intelligence d'Ensemble (Stacking)")
+    st.markdown("""
+    Aucun fonds quantitatif professionnel ne confie son capital à un seul algorithme. Si l'algorithme a une "hallucination", le portefeuille explose.
+    
+    La version pro de cette application utilise l'architecture de **Stacking (Voting Classifier)** :
+    1. **XGBoost :** Excellent pour capturer les tendances complexes.
+    2. **LightGBM :** Ultra-rapide et très performant sur les anomalies de volume.
+    3. **Random Forest :** Très robuste, il ne "sur-apprend" (overfit) presque jamais.
+    
+    Au lieu d'avoir un dictateur, nous avons un **Comité de Décision**. L'ordre d'achat ou de vente final n'est passé que si les algorithmes trouvent un consensus mathématique (Soft Voting). Cela réduit drastiquement les faux signaux (False Positives).
+    """)
+
+    st.header("10. Simulation de Monte Carlo (Probabilité de Ruine)")
+    st.markdown("""
+    Créée lors du projet Manhattan pour la bombe atomique, la simulation de Monte Carlo utilise l'aléatoire pour résoudre des problèmes déterministes.
+    
+    Un backtest classique ne représente qu'**une seule** ligne temporelle : celle qui s'est réellement passée. Mais le marché est fait de probabilités.
+    Pour stress-tester notre stratégie, nous utilisons la méthode du **Bootstrap Resampling** :
+    *   Le moteur génère **1 000 univers parallèles** en piochant aléatoirement dans les rendements historiques de l'IA.
+    *   Il calcule ensuite dans combien de ces univers la stratégie a fait faillite (défini ici comme une perte > 20% du capital).
+    *   Cela nous donne la **Probabilité de Ruine**. Si elle est supérieure à 5%, la stratégie est considérée comme trop risquée pour être déployée en réel, même si son backtest est positif.
+    """)
+
 def get_portfolio_path():
     # Si le dossier /app/data existe (cas d'un volume monté sur Dokploy), on l'utilise.
     # Sinon, on sauvegarde localement dans le dossier courant.
@@ -1641,20 +1725,25 @@ def page_paper_trading():
                 col2.write(f"**Prix Actuel:** {current_price:.2f} $")
                 
                 if st.button(f"🔴 Liquider {t} au marché", key=f"liq_{t}"):
-                    revenue = qty * current_price
-                    pf['cash'] += revenue
+                    # Simulation Event-Driven (Slippage + Commissions)
+                    exec_price = current_price * 0.9990 # -0.10% Slippage
+                    gross_revenue = qty * exec_price
+                    commission = gross_revenue * 0.0005 # -0.05% Frais
+                    net_revenue = gross_revenue - commission
+                    
+                    pf['cash'] += net_revenue
                     pf['history'].append({
                         'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         'action': 'SELL (Manual)',
                         'ticker': t,
                         'qty': qty,
-                        'price': current_price,
-                        'total': revenue,
-                        'pnl': pnl
+                        'price': exec_price,
+                        'total': net_revenue,
+                        'pnl': net_revenue - (qty * avg_price)
                     })
                     del pf['positions'][t]
                     save_portfolio(pf)
-                    st.success(f"Position {t} liquidée avec succès !")
+                    st.success(f"Position {t} liquidée avec succès (Slippage et Frais déduits) !")
                     st.rerun()
     else:
         st.info("Aucune position ouverte actuellement. Utilisez le Terminal de Trading pour acheter.")
