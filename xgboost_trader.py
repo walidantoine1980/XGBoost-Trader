@@ -1229,7 +1229,7 @@ def page_indicators():
     with st.expander("🌪️ Les Bandes de Bollinger & Le 'Squeeze'"):
         st.latex(r"Upper = SMA_{20} + 2\sigma \quad | \quad Lower = SMA_{20} - 2\sigma")
         st.markdown("""
-        **Théorie Mathématique :** On prend la moyenne des prix (SMA 20), et on ajoute/soustrait 2 écarts-types statistiques ($\sigma$). En statistiques, cela signifie que **95% des prix futurs seront contenus dans ces bandes**.
+        **Théorie Mathématique :** On prend la moyenne des prix (SMA 20), et on ajoute/soustrait 2 écarts-types statistiques ($\\sigma$). En statistiques, cela signifie que **95% des prix futurs seront contenus dans ces bandes**.
         
         **Le Concept du "Squeeze" (BB Width) :** 
         L'indicateur `BB_Width` mesure l'écartement entre la bande haute et basse. 
@@ -1517,13 +1517,16 @@ def page_fundamentals(tickers):
 
 def page_strategy_academy():
     st.title("🎓 Académie : Stratégie & Risk Management")
-    st.markdown("Bienvenue dans le centre de formation avancé pour les Quants.")
+    st.markdown("Bienvenue dans le centre de formation avancé pour les Quants. Les mathématiques pures ne suffisent pas, il faut comprendre les dynamiques comportementales des marchés.")
     
     st.header("1. L'Alpha (α) et le Beta (β)")
     st.markdown("""
     Dans le monde institutionnel, la performance brute ne veut rien dire. 
-    - **Le Beta (β)** : C'est la performance due au marché global. Si vous achetez le S&P 500, vous avez un Beta de 1. Vous gagnez quand le marché gagne.
-    - **L'Alpha (α)** : C'est la **véritable valeur ajoutée** de votre stratégie. C'est l'argent gagné indépendamment des mouvements du marché (par exemple, gagner de l'argent pendant un krach, ou battre l'indice de référence).
+    - **Le Beta (β)** : C'est la performance due au marché global. Si vous achetez le S&P 500, vous avez un Beta de 1. Vous gagnez quand le marché gagne. C'est le "rendement paresseux".
+    - **L'Alpha (α)** : C'est la **véritable valeur ajoutée** de votre stratégie. C'est l'argent gagné indépendamment des mouvements du marché. 
+    
+    > [!TIP]
+    > **L'Observation des Pros :** Lors du marché haussier post-Covid (2020-2021), beaucoup de traders amateurs se prenaient pour des génies car ils gagnaient 50%. Mais le marché gagnait 60%. Leur Alpha était donc négatif (-10%). Le vrai test d'un algorithme (et son Alpha réel) se mesure lors des marchés baissiers ou latéraux.
     """)
     st.info("💡 **Objectif du Trading Algorithmique** : Extraire de l'Alpha régulier, peu importe que le marché monte ou baisse.")
 
@@ -1531,117 +1534,86 @@ def page_strategy_academy():
     st.markdown("""
     Le **Maximum Drawdown (MDD)** est votre pire ennemi. C'est la perte maximale historique de votre portefeuille.
     
-    Voici pourquoi la gestion du risque est la seule chose qui compte en trading :
+    L'asymétrie des pertes est cruelle. La gestion du risque est la seule chose qui compte :
     *   Si vous perdez **10%**, il vous faut **11%** de gain pour revenir à zéro.
     *   Si vous perdez **20%**, il vous faut **25%** de gain pour revenir à zéro.
     *   Si vous perdez **50%**, il vous faut **100%** de gain pour revenir à zéro.
     *   Si vous perdez **90%**, il vous faut **900%** de gain !
+    
+    > [!WARNING]
+    > **Cas d'École : Long-Term Capital Management (LTCM) en 1998.**
+    > Ce Hedge Fund était dirigé par les Prix Nobel d'Économie Myron Scholes et Robert Merton. Leurs algorithmes étaient parfaits. Mais ils utilisaient un levier de 25:1. Lors du défaut de la dette russe (un événement "Cygne Noir" imprévisible par leurs modèles), leur portefeuille a subi un Drawdown si rapide que les mathématiques n'ont pas pu les sauver. Le fonds a fait faillite, menaçant l'économie mondiale.
     """)
-    st.warning("🚨 Règle d'Or : Coupez vos pertes rapidement. Ne laissez jamais un trade détruire votre capital, car les mathématiques jouent contre vous.")
 
     st.header("3. Le Money Management Dynamique (Critère de Kelly)")
     st.markdown("""
-    Les traders débutants utilisent la **Règle des 2%** fixe (risquer 2% par trade maximum). Les fonds quantitatifs utilisent la formule probabiliste du **Critère de Kelly**.
+    Les traders débutants utilisent la **Règle des 2%** fixe. Les fonds quantitatifs (comme Renaissance Technologies) utilisent la formule probabiliste du **Critère de Kelly**.
     
-    La formule de Kelly calcule exactement quel pourcentage de votre capital vous devez risquer pour maximiser votre croissance à long terme, en se basant sur la performance historique de votre IA.
+    La formule de Kelly calcule le pourcentage mathématiquement optimal de votre capital à risquer pour maximiser la croissance composée, en évitant la ruine.
     
     $$ Kelly\\,\\% = W - \\frac{1 - W}{R} $$
-    *(Où **W** = Win Rate de l'IA, et **R** = Ratio Gain/Perte moyen)*
+    *(Où **W** = Win Rate, et **R** = Ratio Gain/Perte moyen)*
     
-    **Exemple :** Si l'IA a raison 60% du temps (W=0.6) et que lorsqu'elle gagne, elle gagne deux fois plus qu'elle ne perd (R=2). Kelly suggère de risquer exactement **40%** !
+    > [!NOTE]
+    > **L'Exemple du Coin Toss (Pile ou Face biaisé) de Claude Shannon :**
+    > Imaginez qu'on vous propose un jeu de pile ou face truqué en votre faveur : vous avez 60% de chances de gagner (W=0.6) et vous gagnez 1$ pour chaque 1$ parié (R=1). 
+    > Si vous pariez tout votre capital à chaque lancer, malgré votre avantage mathématique, vous finirez inévitablement ruiné à la première série de pertes.
+    > Selon la formule, la mise optimale est de `0.6 - (1 - 0.6) / 1 = 20%`. Parier plus de 20% détruit votre croissance à long terme à cause de la volatilité des pertes.
     
     **Dans l'application :**
-    Le plein Kelly étant mathématiquement très agressif, nous utilisons un **Half-Kelly** (Kelly divisé par 2) plafonné à **5%** maximum par sécurité. 
-    
-    *   **Problème initial :** Le risque était fixé arbitrairement à 2% par trade, ce qui est une règle pour débutants.
-    *   **Solution :** Utiliser la formule du Critère de Kelly. C'est l'équation mathématique utilisée par les plus grands fonds (comme Renaissance Technologies) pour maximiser la croissance du capital à long terme.
-    *   **Implémentation :** L'application calcule le Win Rate et le Risk/Reward historiques du modèle XGBoost, et en déduit le pourcentage exact du capital à risquer. Si le modèle est extrêmement performant sur une action, l'algorithme augmente la taille de position ; s'il est moyen, il la réduit.
+    Le plein Kelly étant mathématiquement agressif, le moteur algorithmique utilise automatiquement un **Half-Kelly** (Kelly/2) plafonné à **5%** maximum par position. L'IA gère donc la taille de ses positions intelligemment en fonction de sa propre précision historique.
     """)
 
     st.header("4. Le Ratio Risque/Récompense (Risk/Reward)")
     st.markdown("""
-    Même si votre IA (XGBoost) a un "Win Rate" de seulement 40% (elle a tort 60% du temps), vous pouvez être massivement rentable.
+    Une IA n'a pas besoin d'avoir raison tout le temps pour générer des millions. Même si votre XGBoost a un "Win Rate" de seulement 40% (elle a tort 60% du temps), elle peut dominer le marché.
     
-    Comment ? Avec un **Risk/Reward de 1:3**.
+    Comment ? Avec un **Risk/Reward asymétrique de 1:3**.
     *   Vous risquez 100$ pour gagner 300$.
     *   Sur 10 trades : 6 pertes de 100$ (-600$), 4 gains de 300$ (+1200$).
-    *   Bénéfice total : **+600$** alors que vous avez eu tort la majorité du temps !
+    *   Bénéfice total : **+600$** avec un modèle qui se trompe la majorité du temps !
+    
+    > [!TIP]
+    > L'observation du marché montre que les "Trend Followers" (suiveurs de tendance) ont souvent des Win Rates ridicules (35%), mais capturent des tendances massives (Risk/Reward de 1:5 ou 1:10), ce qui les rend massivement rentables. Notre système utilise la volatilité (l'ATR) pour placer ses stops intelligemment.
     """)
-    st.success("C'est pourquoi notre Plan de Trading définit systématiquement un Stop-Loss à 1.5 ATR et un Take-Profit à 3.0 ATR (Ratio de 1:2 strict).")
 
     st.header("5. Le Filtre de Régime (SMA 200)")
     st.markdown("""
-    C'est la règle de base la plus sous-estimée des marchés : **Ne jamais trader contre la tendance de fond.**
-    
-    Même la meilleure IA du monde produira de faux signaux d'achat en plein Krach boursier ("Rattraper un couteau qui tombe"). Pour éviter cela, nous avons intégré un **Filtre de Régime**.
+    Même la meilleure IA du monde produira de faux signaux d'achat en plein Krach boursier ("Rattraper un couteau qui tombe"). C'est pourquoi nous avons intégré un **Filtre de Régime**.
     
     **La SMA 200 (Moyenne Mobile à 200 jours) :**
-    Elle représente la tendance institutionnelle à long terme (environ 1 an de trading).
-    - **Si Prix > SMA 200** : Nous sommes en *Régime Haussier* (Bull Market). Les signaux d'achat sont validés à pleine confiance.
-    - **Si Prix < SMA 200** : Nous sommes en *Régime Baissier* (Bear Market). Si l'IA veut acheter, le signal est dégradé en **"ACHAT RISQUÉ (Contre-Tendance)"**. Vous êtes prévenu du danger structurel de la position.
+    Elle représente la tendance institutionnelle à long terme. C'est la ligne de séparation entre le Bull Market (Hausse) et le Bear Market (Baisse).
+    - **Prix > SMA 200** : Les acheteurs ont le contrôle structurel. L'IA a le "feu vert" complet.
+    - **Prix < SMA 200** : Marché baissier. L'IA dégradera tout signal d'achat en alerte **Risquée (Contre-Tendance)**. 
     
-    *   **Problème initial :** Le modèle essayait de trader de la même façon pendant les marchés haussiers et baissiers (seul le VIX l'arrêtait en cas de panique extrême).
-    *   **Solution :** Ajouter un indicateur de tendance de fond (la SMA 200 jours).
-    *   **Implémentation :** C'est une règle d'or institutionnelle. L'IA sait désormais dans quel "Régime" se trouve l'action. Si le prix est sous la SMA 200 (Régime Baissier Long Terme), les signaux d'Achat sont filtrés ou ignorés pour éviter de "rattraper un couteau qui tombe" (faux signaux), augmentant massivement la précision globale (accuracy) du backtest.
+    > [!IMPORTANT]
+    > **Le Krach de 2008 :** Les algorithmes qui n'avaient pas de filtre de régime long-terme ont passé l'année entière à détecter des "creux" (oversold RSI) et à acheter la baisse, se faisant anéantir. La SMA 200 a protégé le capital en interdisant les achats lourds durant toute l'année.
     """)
 
-    st.header("6. L'Optimisation de Portefeuille (Modèle de Black-Litterman)")
+    st.header("6. Modèle de Black-Litterman (Optimisation de Portefeuille)")
     st.markdown("""
-    Créé par Fischer Black (Prix Nobel) et Robert Litterman chez Goldman Sachs en 1990, c'est **LE** modèle institutionnel de gestion de portefeuille.
+    Créé par Fischer Black et Robert Litterman chez Goldman Sachs en 1990, c'est **LE** modèle institutionnel par excellence.
     
-    L'approche naïve consiste à tout mettre à parts égales. L'approche classique de Markowitz échoue souvent car elle est trop sensible aux petites erreurs statistiques.
+    L'approche classique (Markowitz) crée des portefeuilles absurdes dès que les statistiques d'une action changent légèrement. Black-Litterman résout cela avec l'inférence bayésienne.
     
-    **Le génie de Black-Litterman :**
-    1. **Le Prior (L'Équilibre) :** Le modèle suppose d'abord que le marché est efficient. Nous utilisons l'Inverse Volatilité (Risk Parity) comme point d'ancrage "sain" et stable.
-    2. **Les Vues (L'Alpha) :** Le gérant de fonds a des convictions. Dans notre cas, **la conviction, c'est notre IA (XGBoost)**. Les prédictions mathématiques (ex: 65% de probabilité de hausse) sont converties en "Rendement Excédentaire Attendu".
-    3. **Le Posterior (L'Optimisation Bayésienne) :** Le modèle mathématique "tord" les poids de base du portefeuille. Si l'IA est agressive sur Apple, le modèle surpondère Apple, tout en respectant la variance globale (le risque). C'est ce qui tourne sous le capot du "Mode Portefeuille Institutionnel".
+    1. **Le Prior (L'Équilibre) :** Le modèle part du principe que le marché actuel est "juste" (Risk Parity).
+    2. **Les Vues (L'Alpha) :** Le gérant exprime ses convictions. Dans notre système, **XGBoost fournit les convictions**.
+    3. **Le Posterior :** Le modèle ajuste doucement le portefeuille pour refléter ces convictions, sans détruire la diversification.
+    
+    > **Exemple de la méthode :**
+    > Si l'équilibre suggère 50% Actions, 50% Or. L'IA XGBoost détecte une probabilité de hausse extrême sur l'Or. Le modèle Black-Litterman ne va pas faire 100% Or (ce serait suicidaire). Il va ajuster à 40% Actions et 60% Or, en quantifiant mathématiquement le niveau de confiance de l'IA par rapport au niveau d'incertitude du marché.
     """)
 
-    st.header("7. Le Moteur Événementiel (Event-Driven Backtest)")
+    st.header("7. Value at Risk (VaR) & Expected Shortfall (CVaR)")
     st.markdown("""
-    Dans la finance quantitative amateur, 99% des algorithmes échouent lors du passage en réel. La raison principale ? Le **Biais de Vectorisation**.
+    Le Drawdown regarde le passé. Les régulateurs exigent que les Hedge Funds mesurent le risque *futur*.
     
-    Un backtest naïf suppose qu'il peut exécuter ses ordres instantanément, au prix exact de la clôture, et sans aucun frais. C'est mathématiquement faux et cela crée l'illusion de la richesse.
+    *   **VaR (95%) :** *"Dans 95% des scénarios normaux, quelle est la pire perte que je subirai demain ?"*
+    *   **CVaR (Expected Shortfall) :** *"Si le marché explose (les 5% restants), quelle sera l'ampleur du désastre ?"*
     
-    Notre application utilise un véritable moteur "Event-Driven" qui simule la réalité :
-    1. **La Latence (T+1) :** Si l'IA détecte une opportunité d'achat à la clôture, l'ordre ne s'exécute physiquement qu'à **l'ouverture du lendemain** (prix `Open`), simulant le temps de calcul et de transmission de l'ordre.
-    2. **Le Slippage (Market Impact) :** Quand un fonds achète massivement, le prix monte pendant qu'il achète. Notre moteur dégrade volontairement vos prix d'achat et de vente de **0.10%** pour simuler la friction du carnet d'ordres (Bid-Ask spread).
-    3. **Les Commissions :** Nous facturons virtuellement **0.05%** de frais de courtage (taux institutionnel) directement sur vos liquidités à chaque ordre.
-    
-    *Conclusion : Toutes les métriques de l'application (Sharpe, Drawdown, P&L) sont calculées sur cette base hyper-réaliste. Si l'algorithme est rentable ici, son espérance de gain dans le monde réel est mathématiquement robuste.*
-    """)
-
-    st.header("8. Value at Risk (VaR) & Expected Shortfall (CVaR)")
-    st.markdown("""
-    Le Drawdown est une bonne métrique, mais il regarde le passé. Les banques centrales et les régulateurs exigent que les Hedge Funds mesurent leur risque futur : c'est la **Value at Risk (VaR)**.
-    
-    *   **VaR (95%) :** Elle répond à la question *"Dans 95% des scénarios normaux, quelle est la perte journalière maximale que je risque de subir ?"* Si la VaR est de 2%, vous êtes confiant à 95% que votre portefeuille ne baissera pas de plus de 2% demain.
-    *   **CVaR (Conditional VaR / Expected Shortfall) :** C'est le risque extrême (les 5% restants, les "Cygnes Noirs"). Elle répond à la question *"Si le pire arrive et que la VaR est dépassée, quelle sera ma perte moyenne ?"*.
-    
-    Notre plateforme quantifie désormais ces deux valeurs en temps réel.
-    """)
-
-    st.header("9. L'Intelligence d'Ensemble (Stacking)")
-    st.markdown("""
-    Aucun fonds quantitatif professionnel ne confie son capital à un seul algorithme. Si l'algorithme a une "hallucination", le portefeuille explose.
-    
-    La version pro de cette application utilise l'architecture de **Stacking (Voting Classifier)** :
-    1. **XGBoost :** Excellent pour capturer les tendances complexes.
-    2. **LightGBM :** Ultra-rapide et très performant sur les anomalies de volume.
-    3. **Random Forest :** Très robuste, il ne "sur-apprend" (overfit) presque jamais.
-    
-    Au lieu d'avoir un dictateur, nous avons un **Comité de Décision**. L'ordre d'achat ou de vente final n'est passé que si les algorithmes trouvent un consensus mathématique (Soft Voting). Cela réduit drastiquement les faux signaux (False Positives).
-    """)
-
-    st.header("10. Simulation de Monte Carlo (Probabilité de Ruine)")
-    st.markdown("""
-    Créée lors du projet Manhattan pour la bombe atomique, la simulation de Monte Carlo utilise l'aléatoire pour résoudre des problèmes déterministes.
-    
-    Un backtest classique ne représente qu'**une seule** ligne temporelle : celle qui s'est réellement passée. Mais le marché est fait de probabilités.
-    Pour stress-tester notre stratégie, nous utilisons la méthode du **Bootstrap Resampling** :
-    *   Le moteur génère **1 000 univers parallèles** en piochant aléatoirement dans les rendements historiques de l'IA.
-    *   Il calcule ensuite dans combien de ces univers la stratégie a fait faillite (défini ici comme une perte > 20% du capital).
-    *   Cela nous donne la **Probabilité de Ruine**. Si elle est supérieure à 5%, la stratégie est considérée comme trop risquée pour être déployée en réel, même si son backtest est positif.
+    > [!CAUTION]
+    > **Le Problème des Fat Tails (Queues Épaisses) :**
+    > Selon une distribution Normale (Gaussienne), le Krach de 1987 (-22% en un jour) est un événement qui ne devrait se produire qu'une fois tous les 14 milliards d'années ! Or, les marchés font des "Fat Tails" : les catastrophes arrivent très souvent. La CVaR permet précisément de mesurer le coût de ces cygnes noirs, là où la VaR simple devient aveugle.
     """)
 
 def get_portfolio_path():
@@ -1866,24 +1838,64 @@ def page_options_paper_trading():
         st.rerun()
 
 def page_advanced_academy():
-    st.title("🎓 Académie : Modélisation Avancée")
-    st.markdown("Plongez dans les mathématiques utilisées par les Hedge Funds.")
+    st.title("🎓 Académie : Modélisation Avancée (Machine Learning)")
+    st.markdown("Plongez dans les algorithmes d'Intelligence Artificielle qui dominent aujourd'hui Wall Street, bien loin des simples moyennes mobiles.")
     
-    st.header("1. Optimisation Bayésienne (Optuna)")
+    st.header("1. L'Intelligence d'Ensemble (Stacking) & La Sagesse des Foules")
     st.markdown("""
-    Plutôt que d'essayer des milliers de paramètres au hasard (Grid Search) ou aléatoirement (Randomized Search), les professionnels utilisent **Optuna**.
-    *   C'est une IA qui entraîne l'IA. 
-    *   Elle utilise des algorithmes probabilistes (TPE - Tree-structured Parzen Estimator) pour deviner quels paramètres vont améliorer le modèle.
-    *   Si un essai est mauvais, Optuna "apprend" la zone de l'échec et ne la teste plus.
+    Pourquoi utiliser un seul algorithme quand on peut avoir un comité d'experts ? C'est le principe du **Stacking** (ou Voting Classifier).
+    
+    > [!NOTE]
+    > **Le Poids du Bœuf (Francis Galton, 1906) :**
+    > Lors d'une foire agricole, 800 personnes devaient deviner le poids d'un bœuf. Certains étaient experts (bouchers), d'autres incompétents. Étonnamment, la *moyenne* de toutes les estimations (1197 livres) était à moins d'une livre du poids exact du bœuf (1198 livres) ! La foule était plus précise que le meilleur des experts.
+    
+    **Application en Trading :** 
+    Notre système utilise un comité composé de :
+    1.  **XGBoost :** Le spécialiste des relations complexes non-linéaires.
+    2.  **LightGBM :** Le sprinteur qui détecte les micro-anomalies très rapidement.
+    3.  **Random Forest :** L'ancien très prudent qui ne s'enflamme jamais.
+    
+    Le signal final d'achat n'est déclenché que par **Consensus** (Soft Voting). Cela élimine presque tous les faux signaux (le bruit du marché).
     """)
-    st.info("Dans notre application, cochez **Auto-Optimisation** pour activer Optuna. C'est plus lent, mais le Sharpe Ratio généré est souvent drastiquement supérieur.")
 
-    st.header("2. La Simulation de Monte Carlo")
+    st.header("2. Arbres de Décision (XGBoost vs Random Forest)")
     st.markdown("""
-    Créée lors du projet Manhattan pour la bombe atomique, la simulation de Monte Carlo utilise l'aléatoire pour résoudre des problèmes déterministes.
+    Ces algorithmes sont des forêts contenant des milliers d'arbres de décision. Mais ils plantent leurs arbres différemment :
     
-    **En finance :** On calcule la volatilité historique et on génère des milliers de scénarios futurs probables (chemins aléatoires ou Mouvement Brownien).
-    Cela permet de calculer la **Value at Risk (VaR)** : "Quel est le scénario catastrophe qui a 5% de chance de se produire ?"
+    *   **Random Forest (Le Parallèle) :** Il crée 1 000 arbres en même temps. Chaque arbre regarde une partie différente des données (Bagging). La moyenne est très robuste, mais le modèle a du mal à apprendre des choses ultra-complexes.
+    *   **XGBoost (Le Séquentiel - Gradient Boosting) :** Il crée 1 arbre. Il regarde où cet arbre s'est trompé. L'arbre n°2 a pour **unique mission** de corriger les erreurs de l'arbre n°1. Et ainsi de suite pendant 1 000 arbres. C'est l'un des algorithmes les plus puissants au monde, mais il risque le "Sur-apprentissage" (Overfitting) si on ne le contrôle pas.
+    """)
+
+    st.header("3. Optimisation Bayésienne (Optuna)")
+    st.markdown("""
+    L'entraînement d'un modèle XGBoost nécessite de régler des "Hyperparamètres" (la profondeur des arbres, le taux d'apprentissage). 
+    
+    Plutôt que d'essayer des milliers de paramètres au hasard (Random Search), les Quant Funds utilisent **Optuna**, une IA qui entraîne l'IA.
+    *   Optuna utilise l'inférence bayésienne (TPE - Tree-structured Parzen Estimator).
+    *   Elle explore l'espace des paramètres. Si un essai est mauvais, Optuna mathématise cette zone comme "toxique" et ne la teste plus, gagnant un temps infini.
+    """)
+    st.info("Dans notre application, cochez **Auto-Optimisation (Optuna)** avant d'entraîner le modèle. Le Sharpe Ratio généré est souvent drastiquement supérieur à une configuration manuelle.")
+
+    st.header("4. Explicabilité Mathématique (SHAP)")
+    st.markdown("""
+    Le problème du Machine Learning est l'effet "Boîte Noire" (Black Box). Les régulateurs financiers interdisent aux banques de trader sans pouvoir expliquer *pourquoi* la machine a acheté.
+    
+    Nous utilisons **SHAP (SHapley Additive exPlanations)**, basé sur la Théorie des Jeux Coopératifs (Prix Nobel d'Économie en 2012 pour Lloyd Shapley).
+    
+    > **Comment ça marche ?**
+    > Imaginez 3 joueurs (RSI, MACD, Volume) qui gagnent ensemble 100$. Comment répartir les 100$ équitablement ? Shapley a prouvé qu'il fallait calculer la contribution marginale de chaque joueur dans toutes les coalitions possibles. 
+    > Dans l'application, l'onglet "Dans le cerveau de XGBoost" utilise cette équation exacte pour vous dire, par exemple : *"Le signal est d'Achat à 65%, et le RSI a contribué à +15% de cette décision car il était survendu"*.
+    """)
+
+    st.header("5. La Simulation de Monte Carlo")
+    st.markdown("""
+    Créée par le mathématicien Stanislaw Ulam lors du projet Manhattan pour la bombe atomique, la simulation de Monte Carlo utilise l'aléatoire massif pour résoudre des problèmes déterministes complexes.
+    
+    **En finance (Le Bootstrap Resampling) :**
+    Le futur ne répétera jamais exactement le passé. Pour stress-tester notre IA :
+    1.  Le moteur prend l'historique des gains/pertes de l'IA.
+    2.  Il tire au sort avec remise (Bootstrap) pour générer **1 000 univers parallèles** (des futurs alternatifs).
+    3.  Cela nous permet de calculer la **Probabilité de Ruine**. "Dans combien de ces univers alternatifs l'algorithme a-t-il fait faillite ?"
     """)
 
 def black_scholes(S, K, T, r, sigma, option_type="call"):
@@ -2185,56 +2197,52 @@ def page_options_academy():
     
     st.header("📘 Partie 1 : Qu'est-ce qu'une Option ? (Les Fondations)")
     st.markdown("""
-    Contrairement à une action qui représente une fraction d'entreprise, une Option est un **contrat (Produit Dérivé)**. Sa valeur *dérive* du prix d'un autre actif (le sous-jacent, comme l'action Apple).
-    
+    Contrairement à une action qui représente une fraction d'entreprise, une Option est un **contrat (Produit Dérivé)**. Sa valeur *dérive* du prix d'un autre actif (le sous-jacent).
     Une option vous donne **le DROIT, mais pas l'OBLIGATION**, d'acheter ou de vendre une action à un prix fixé à l'avance, pendant une période donnée.
     
     ### 📈 Le CALL (Option d'Achat)
-    **Définition :** Un contrat qui vous donne le droit d'ACHETER l'action à un prix défini (le *Strike*), peu importe le prix réel de l'action sur le marché.
+    **Définition :** Un contrat qui vous donne le droit d'ACHETER l'action à un prix défini (le *Strike*), peu importe le prix réel du marché.
     
     > **Exemple Pratique (L'Immobilier) :** 
-    > Vous visitez une maison qui vaut 300 000 €. Vous pensez que le quartier va exploser en valeur grâce à l'arrivée d'une gare. Vous signez une "promesse de vente" avec le propriétaire : vous lui donnez 5 000 € aujourd'hui (la **Prime / Premium**), et en échange, vous avez le droit d'acheter la maison à 300 000 € (le **Strike**) n'importe quand pendant les 3 prochains mois (l'**Expiration**).
-    > - **Scénario Gagnant :** 2 mois plus tard, la gare est annoncée. La maison vaut soudainement 400 000 € ! Grâce à votre contrat, vous l'achetez 300 000 €. Votre profit est de 100 000 € (moins la prime de 5 000 €). Avec seulement 5 000 € risqués, vous gagnez 95 000 €. **C'est la puissance de l'effet de levier.**
-    > - **Scénario Perdant :** Le quartier est inondé. La maison tombe à 200 000 €. Êtes-vous obligé de l'acheter 300 000 € ? NON ! Vous déchirez simplement le contrat. Votre perte maximale est limitée à votre mise initiale : les 5 000 € de Prime.
+    > Vous visitez une maison qui vaut 300 000 €. Vous pensez que le quartier va exploser en valeur grâce à l'arrivée d'une gare. Vous signez une "promesse de vente" : vous donnez 5 000 € aujourd'hui (la **Prime / Premium**), et en échange, vous avez le droit d'acheter la maison à 300 000 € (le **Strike**) n'importe quand pendant les 3 prochains mois.
+    > - **Scénario Gagnant :** 2 mois plus tard, la gare est annoncée. La maison vaut 400 000 € ! Grâce au contrat, vous l'achetez 300 000 €. Votre profit est de 100 000 € (moins la prime de 5 000 €). Avec seulement 5 000 € risqués, vous gagnez 95 000 €. **C'est la puissance de l'effet de levier asymétrique.**
+    > - **Scénario Perdant :** Le quartier est inondé. La maison tombe à 200 000 €. Êtes-vous obligé de l'acheter ? NON ! Vous déchirez simplement le contrat. Votre perte est limitée à vos 5 000 € de Prime.
     
     ### 📉 Le PUT (Option de Vente)
-    **Définition :** Un contrat qui vous donne le droit de VENDRE l'action à un prix défini (Strike), même si elle s'est effondrée en bourse.
+    **Définition :** Un contrat qui vous donne le droit de VENDRE l'action à un prix défini (Strike), même si elle s'est effondrée.
     
     > **Exemple Pratique (L'Assurance Auto) :** 
-    > Vous venez d'acheter une voiture neuve pour 50 000 €. Vous craignez un accident. Vous achetez une assurance (le **PUT**) pour 1 000 €/an (la **Prime**). L'assurance garantit qu'en cas de destruction (le prix de la voiture tombe à 0 €), ils vous rachèteront la voiture à 50 000 € (le **Strike**).
-    > - **En Finance :** Vous possédez 100 actions Nvidia à 1 000 $. Vous avez peur du prochain rapport sur les bénéfices. Vous achetez un PUT Strike 1000$. Si Nvidia s'effondre à 500$, vous êtes protégé : grâce à votre PUT, vous forcez le marché à vous racheter vos actions à 1 000$.
+    > Vous achetez une voiture neuve pour 50 000 €. Vous achetez une assurance (le **PUT**) pour 1 000 €/an (la **Prime**). L'assurance garantit qu'en cas de destruction (le prix tombe à 0 €), ils vous rachèteront la voiture à 50 000 € (le **Strike**).
     """)
     
     st.header("🔬 Partie 2 : L'Héritage Physique (De la Thermodynamique à Wall Street)")
     st.markdown("""
-    Avant de devenir une formule financière, les fondations de l'évaluation des options trouvent leurs racines dans la physique pure, comme l'explique George Szpiro dans son ouvrage *Pricing the Future*.
+    Avant d'être une formule financière, l'évaluation des options trouve ses racines dans la physique pure.
     
-    *   **Louis Bachelier & le Mouvement Brownien (1900) :** Cinq ans avant qu'Albert Einstein ne modélise le mouvement aléatoire des particules dans un fluide (le Mouvement Brownien), le mathématicien français Louis Bachelier a utilisé ces mêmes équations de *Marche Aléatoire* (Random Walk) pour décrire les fluctuations de la Bourse de Paris.
-    *   **Kiyosi Itō (1944) :** Il invente le calcul stochastique (le Lemme d'Itō). Les mathématiques classiques (Newton, Leibniz) ne fonctionnent pas pour des variables totalement aléatoires et pleines de "bruit" comme les cours de la bourse. Itō crée le moteur mathématique permettant d'évaluer l'incertitude continue.
-    *   **Edward Thorp (Années 60) :** Mathématicien de génie, il invente le comptage de cartes pour battre les casinos au Blackjack (voir son livre *Beat the Dealer*). Il applique ensuite ses méthodes probabilistes à Wall Street en inventant la première forme de **Delta-Hedging** (la couverture systématique du risque) pour trader les *Warrants*.
-    *   **Black, Scholes & Merton (1973) :** Ils découvrent la formule qui changera la finance. La révélation mathématique incroyable est que l'équation différentielle stochastique qu'ils ont trouvée pour isoler le risque d'une option est en réalité une variante exacte de **l'Équation de la Chaleur** (Heat Transfer Equation) de Joseph Fourier (1822) en thermodynamique. En finance, le risque (l'incertitude) se dissipe dans le temps exactement comme la chaleur se dissipe dans un barreau de métal qui refroidit !
+    *   **Louis Bachelier (1900) :** Cinq ans avant qu'Albert Einstein ne modélise le mouvement aléatoire des particules dans un fluide, Bachelier a utilisé ces équations de *Marche Aléatoire* pour décrire la Bourse de Paris.
+    *   **Kiyosi Itō (1944) :** Il invente le calcul stochastique. Les mathématiques classiques (Newton) ne fonctionnent pas pour des variables pleines de "bruit" comme la bourse. Itō crée le moteur permettant d'évaluer l'incertitude.
+    *   **Black, Scholes & Merton (1973) :** Ils découvrent la formule qui changera la finance. La révélation incroyable est que l'équation différentielle stochastique qu'ils ont trouvée pour le risque d'une option est une variante exacte de **l'Équation de la Chaleur** de Joseph Fourier (1822) en thermodynamique. En finance, le risque (l'incertitude) se dissipe dans le temps exactement comme la chaleur se dissipe dans un barreau de métal !
     """)
     
     st.header("🧠 Partie 3 : Le Modèle de Black-Scholes (La Révolution Quant)")
-    st.info("En 1973, Fischer Black, Myron Scholes et Robert Merton publient l'équation qui a valu un Prix Nobel d'Économie et transformé Wall Street.")
+    st.info("En 1973, Fischer Black, Myron Scholes et Robert Merton publient l'équation qui a valu un Prix Nobel d'Économie.")
     
     st.latex(r"C(S, t) = S \cdot N(d_1) - K \cdot e^{-rt} \cdot N(d_2)")
-    st.latex(r"d_1 = \frac{\ln(S/K) + (r + \frac{\sigma^2}{2})t}{\sigma \sqrt{t}} \quad , \quad d_2 = d_1 - \sigma \sqrt{t}")
     
     st.markdown("""
-    Avant cette équation, fixer le prix d'une option relevait de la supposition. Cette équation différentielle stochastique permet de calculer le "Juste Prix" (Fair Value) d'une option.
+    Cette équation permet de calculer le "Juste Prix" (Fair Value) d'une option.
     
-    **Les 5 Paramètres (Ingrédients) de Black-Scholes :**
-    1.  **$S$ (Spot) :** Le prix *actuel* de l'action. (Ex: Apple est à 150$).
-    2.  **$K$ (Strike) :** Le prix cible d'exercice. (Ex: Call 160$).
-    3.  **$t$ (Time to Expiry) :** Le temps qu'il reste. Plus il y a de temps, plus l'option a des chances d'être gagnante, donc plus elle coûte cher.
-    4.  **$r$ (Risk-free Rate) :** Le taux d'intérêt de l'État (Taux sans risque). C'est le coût de l'argent.
-    5.  **$\sigma$ (Volatilité Implicite) :** L'ingrédient secret. C'est l'estimation de l'amplitude des mouvements futurs. Si l'action bouge de 1% par jour, l'option sera peu chère. Si elle bouge de 10% par jour (comme une Crypto), l'option sera hors de prix, car l'assureur prend d'énormes risques.
+    **Les 5 Ingrédients :**
+    1.  **$S$ (Spot) :** Prix actuel.
+    2.  **$K$ (Strike) :** Prix cible d'exercice.
+    3.  **$t$ (Time) :** Le temps restant.
+    4.  **$r$ (Rate) :** Taux d'intérêt sans risque.
+    5.  **$\\sigma$ (Volatilité Implicite) :** L'ingrédient secret. C'est l'estimation de l'amplitude des mouvements futurs. Si l'action bouge de 1% par jour, l'option sera peu chère. Si elle bouge de 10% par jour, l'option sera hors de prix, car l'assureur prend d'énormes risques.
     """)
     
     st.header("🛡️ Partie 4 : La Gestion du Risque (Les 'Greeks')")
     st.markdown("""
-    Un trader institutionnel ne dit jamais "J'ai acheté 10 Calls". Il dit "Je suis long de 1 000 Delta et j'ai un Theta négatif". Les Greeks mesurent la sensibilité de l'option aux changements du marché.
+    Un trader institutionnel ne dit jamais "J'ai acheté 10 Calls". Il dit "Je suis long de 1 000 Delta et j'ai un Theta négatif".
     """)
     
     c1, c2 = st.columns(2)
@@ -2242,79 +2250,62 @@ def page_options_academy():
         st.subheader("Δ (Delta) : Le Compteur de Vitesse")
         st.markdown("""
         **Que se passe-t-il si l'action monte de 1$ ?**
-        *   Un Call ATM (At-The-Money) a généralement un Delta de 0.50.
-        *   Si l'action Apple monte de 1$, le prix de l'option montera de 0.50$.
-        *   **Concept Institutionnel :** Le Delta représente la "probabilité" perçue par le marché que l'option finisse gagnante. Un Delta de 0.20 signifie qu'il y a environ 20% de chances que l'option ait de la valeur à l'expiration.
+        *   Un Call ATM a généralement un Delta de 0.50. Si l'action monte de 1$, l'option prend 0.50$.
+        *   **Concept :** Le Delta représente la "probabilité" que l'option finisse gagnante.
         """)
         
         st.subheader("Θ (Theta) : Le Sablier Mortel")
         st.markdown("""
-        **Que se passe-t-il si une journée passe (sans que le prix ne bouge) ?**
+        **Que se passe-t-il si une journée passe sans que le prix ne bouge ?**
         *   Le Theta est toujours négatif pour l'acheteur. C'est le loyer quotidien (Time Decay).
-        *   Si Theta = -0.05, votre option perd 0.05$ (donc 5$ par contrat) chaque jour, même le week-end !
-        *   C'est pour cela que 80% des acheteurs d'options perdent de l'argent : le temps joue contre eux.
+        *   C'est pour cela que 80% des acheteurs d'options perdent de l'argent : le temps les détruit.
         """)
         
     with c2:
-        st.subheader("Γ (Gamma) : L'Accélération")
+        st.subheader("Γ (Gamma) : L'Accélération (Le Danger)")
         st.markdown("""
         **Que se passe-t-il si l'action accélère violemment ?**
         *   Le Gamma mesure à quelle vitesse le Delta change.
-        *   Si vous avez un gros Gamma, et que l'action commence à s'envoler, votre Delta (la vitesse) va augmenter exponentiellement, de 0.50 à 0.60, 0.70... Les profits explosent à la hausse. C'est ce qu'on appelle un "Gamma Squeeze".
+        
+        > [!WARNING]
+        > **Le Gamma Squeeze (L'Affaire GameStop 2021) :**
+        > Quand les particuliers ont acheté des millions de *Calls* OTM (hors de la monnaie) sur GameStop, les Market Makers (les vendeurs) se sont retrouvés avec un risque énorme. Pour se couvrir (Delta Hedging), les algorithmes des Market Makers ont été forcés d'acheter l'action GameStop. Plus l'action montait, plus le Gamma augmentait le Delta, forçant les algorithmes à acheter *encore plus* d'actions. C'est une réaction en chaîne nucléaire.
         """)
         
         st.subheader("ν (Vega) : Le Détecteur de Panique")
         st.markdown("""
-        **Que se passe-t-il si le marché devient nerveux (Le VIX augmente) ?**
-        *   Si le marché panique, la volatilité augmente. 
-        *   Même si l'action Apple ne bouge pas d'un centime, si la volatilité du marché prend +1%, la valeur de votre option va gonfler du montant du Vega. 
-        *   Acheter des options quand tout est calme et les revendre quand la panique s'installe est une stratégie majeure des Hedge Funds.
+        **Que se passe-t-il si le marché devient nerveux ?**
+        *   Si le marché panique, la volatilité (le VIX) augmente. La valeur de votre option va gonfler du montant du Vega, même si l'action ne bouge pas d'un centime !
         """)
         
     st.divider()
-    st.header("⚔️ Partie 5 : Stratégies XGBoost et Cas d'Usages")
+    st.header("🌊 Partie 5 : Le Volatility Smile (Le Traumatisme de 1987)")
     st.markdown("""
-    Comment nous couplons l'IA avec les mathématiques dérivées dans cette application :
+    Dans l'équation pure de Black-Scholes, la volatilité implicite est censée être plate (la même pour tous les Strikes). C'est ce qu'on croyait avant le **19 Octobre 1987**.
     
-    1.  **L'Achat Directionnel (Leverage) :** 
-        L'IA détecte une très forte probabilité de hausse via ses arbres de décision. Au lieu d'acheter 100 actions Apple à 150$ (coût: 15 000$), le trader achète 1 contrat Call (Delta 0.50) à 5$ (coût: 500$). Il obtient la même exposition financière en risquant 30x moins de capital. Si l'IA se trompe, la perte est capée à 500$.
-        
-    2.  **Le Hedging (Couverture) :** 
-        Le trader possède un gros portefeuille d'actions. L'IA indique soudainement que le filtre de régime a cassé la SMA 200 (Marché baissier) et que le sentiment NLP est désastreux. Le trader ne veut pas vendre ses actions pour des raisons fiscales. Il achète des PUTS. Si le marché s'effondre, la perte sur ses actions est mathématiquement remboursée par les gains exponentiels des contrats PUT.
-        
-    3.  **Jouer les résultats d'entreprise (Earnings) :**
-        La veille de l'annonce des résultats de Tesla, la Volatilité Implicite (Vega) est à 150%. Les options coûtent une fortune. L'IA conseille de ne pas acheter la direction, car même si l'action monte légèrement, la volatilité va s'effondrer le lendemain (Le fameux "IV Crush"), détruisant la valeur des contrats Call et Put simultanément. Le trader institutionnel va plutôt "Vendre" (Short) des options à des particuliers pour récolter cette prime surgonflée.
+    Ce jour-là (Black Monday), le Dow Jones s'est effondré de 22% en un jour. Ce scénario était mathématiquement "impossible" selon les modèles.
+    
+    > **Le Réveil des Marchés :** 
+    > Depuis ce jour, les traders savent que les modèles ont tort sur les événements extrêmes (Fat Tails). Par conséquent, sur le marché réel, les *Puts* (assurances contre la baisse) très loin de la monnaie (OTM) se vendent beaucoup plus chers que les Calls. 
+    > Si on trace la Volatilité Implicite en fonction du Strike, on ne voit plus une ligne droite, mais un "Sourire" tordu (Volatility Smile ou Smirk). 
+    > L'outil *Surface de Volatilité 3D* de notre application vous permet de visualiser ce traumatisme de 1987 en direct sur n'importe quelle action.
     """)
     
     st.divider()
-    st.header("⏳ Partie 6 : La Vente de Contrats (Devenir l'Assureur)")
+    st.header("⏳ Partie 6 : La Vente de Contrats (L'IV Crush & Le métier d'Assureur)")
     st.markdown("""
-    En finance, pour chaque acheteur d'Option, il y a un **Vendeur**. 
-    Si 80% des acheteurs d'options perdent de l'argent à cause du temps qui passe (*Theta*), cela signifie que **80% des vendeurs encaissent cet argent**. Vendre des options s'appelle être *short* sur la volatilité.
+    Si 80% des acheteurs d'options perdent de l'argent à cause du temps qui passe (*Theta*), cela signifie que **80% des vendeurs encaissent cet argent**. 
     
-    ### 🏦 Pourquoi vendre des Options ? (Le métier de l'assureur)
-    Quand vous Vendez (ou "Écrivez") un contrat CALL ou PUT, c'est **VOUS** qui encaissez la Prime immédiatement. 
-    Vous ne payez rien pour entrer dans la position. En revanche, vous prenez l'**OBLIGATION** de respecter le contrat si l'acheteur décide de l'exercer.
+    ### 🎯 L'Écrasement de la Volatilité (L'Erreur du Débutant)
+    Le piège le plus meurtrier pour les investisseurs de détail a lieu lors de l'annonce des résultats trimestriels (Earnings) d'entreprises très volatiles comme Nvidia ou Tesla.
     
-    *   **Vente de PUT (Bullish/Neutre) :** Vous pariez que l'action va rester stable ou monter. Vous encaissez l'argent aujourd'hui. Si elle s'effondre, vous serez forcé d'acheter les actions au prix du Strike (ce qui peut être désastreux si l'entreprise fait faillite).
-    *   **Vente de CALL (Bearish/Neutre) :** Vous pariez que l'action va rester stable ou baisser. Le risque ici est **théoriquement infini** (Naked Call), car une action peut monter indéfiniment (ex: le Short Squeeze de GameStop).
+    1.  **L'Attente :** La semaine précédant l'annonce, tout le monde achète des Calls. La demande explose. Les Market Makers augmentent massivement la Prime (l'Implied Volatility gonfle).
+    2.  **L'Achat naïf :** Le débutant achète un Call la veille de l'annonce en payant une prime délirante (Vega géant).
+    3.  **L'Événement :** Nvidia annonce d'excellents résultats ! L'action monte de +5%.
+    4.  **Le Désastre (IV Crush) :** L'événement est passé. L'incertitude a disparu. L'Implied Volatility s'effondre instantanément de 150% à 40%. La perte de valeur due au *Vega* est tellement violente qu'elle absorbe totalement le gain de l'action. **Le débutant perd 50% de son investissement alors qu'il a eu raison sur la direction !**
     
-    ### ✂️ Peut-on vendre un contrat avant l'expiration ? (Le Marché Secondaire)
-    **OUI, à 100% !** C'est d'ailleurs ce que font 95% des traders professionnels.
-    Vous n'êtes jamais obligé d'attendre la date d'expiration pour réaliser votre profit ou couper votre perte. Les contrats d'options s'échangent sur le marché secondaire (comme les actions).
-    
-    *   **Si vous êtes ACHETEUR (Long) :** Vous avez acheté un Call à 5$. L'action monte violemment le lendemain. Votre Call vaut maintenant 15$. Vous cliquez sur "Vendre pour fermer" (Sell to Close). Vous encaissez 10$ de profit immédiat. Le contrat est transféré à quelqu'un d'autre.
-    *   **Si vous êtes VENDEUR (Short) :** Vous avez vendu un Put et encaissé 5$ de prime (votre profit maximal). Le marché monte, le risque disparaît, le Put ne vaut plus que 1$. Vous pouvez "Racheter pour fermer" (Buy to Close) le contrat pour 1$. Vous avez gagné 4$ de façon sécurisée sans attendre l'expiration.
-    
-    ### 🎯 Les conditions d'une Vente (Short) réussie
-    Pour gagner à coup sûr en tant que vendeur d'options, les Quants cherchent les configurations suivantes :
-    
-    1.  **L'Écrasement de la Volatilité (IV Crush) :** 
-        Vendre quand le VIX est au plus haut (panique générale). Les primes sont hors de prix car la peur est maximale. Dès que l'événement passe, la peur redescend, et la valeur de toutes les options s'effondre (chute du *Vega*). Le vendeur rachète l'option pour des miettes et empoche la différence.
-    2.  **L'Érosion du Temps (Theta Decay) :** 
-        Le temps détruit la valeur d'une option de manière non-linéaire. Une option perd très peu de valeur à 90 jours de l'expiration, mais perd sa valeur de manière exponentielle dans les **30 derniers jours**. Les vendeurs vendent donc massivement des contrats à 45 jours d'expiration, et les rachètent à 21 jours pour capturer la pente la plus raide du *Theta Decay* de façon presque mathématiquement garantie.
-    3.  **Vente Couverte (Covered Call) :** 
-        C'est la stratégie ultime des milliardaires (comme Warren Buffett). Vous possédez 100 actions Apple. Vous vendez un Call très loin au-dessus du prix actuel (Out-of-the-Money). Vous encaissez la prime (comme un dividende synthétique). Si Apple n'atteint jamais ce prix exorbitant, vous gardez vos actions ET la prime. Si Apple atteint ce prix, vous êtes forcé de vendre vos actions, mais avec un énorme bénéfice sur la hausse de l'action de toute façon. C'est du "Gagnant-Gagnant".
+    > [!TIP]
+    > C'est pour cela que les Quants institutionnels **vendent** des options (Short Volatility) avant les earnings. Ils encaissent la prime hors de prix, et le lendemain matin, l'IV Crush détruit le contrat, leur permettant d'empocher l'argent sans rien faire.
     """)
 
 # --- FONCTION PRINCIPALE ---
