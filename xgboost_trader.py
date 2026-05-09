@@ -14,6 +14,7 @@ import time
 import pickle
 import os
 import json
+import subprocess
 import optuna
 import scipy.stats as si
 import shap
@@ -2308,6 +2309,84 @@ def page_options_academy():
     > C'est pour cela que les Quants institutionnels **vendent** des options (Short Volatility) avant les earnings. Ils encaissent la prime hors de prix, et le lendemain matin, l'IV Crush détruit le contrat, leur permettant d'empocher l'argent sans rien faire.
     """)
 
+def page_bot_config():
+    st.title("🤖 Paramétrage du Bot (Headless)")
+    st.markdown("Configurez ici l'automatisation. Le bot s'exécutera en tâche de fond tous les soirs, s'entraînera, et vous enverra un signal via Telegram ou Discord.")
+    
+    BOT_CONFIG_FILE = "bot_config.json"
+    
+    # Charger la conf existante
+    if os.path.exists(BOT_CONFIG_FILE):
+        with open(BOT_CONFIG_FILE, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    else:
+        config = {
+            "webhook_discord": "",
+            "telegram_bot_token": "",
+            "telegram_chat_id": "",
+            "tickers": ["Apple Inc. (US)"],
+            "run_time": "22:00",
+            "is_active": False
+        }
+        
+    st.header("1. Cibles d'Analyse Nocturne")
+    selected_tickers = st.multiselect(
+        "Quelles actions le bot doit-il analyser chaque nuit ?",
+        options=list(MAJOR_STOCKS.values()),
+        default=config.get("tickers", ["Apple Inc. (US)"])
+    )
+    
+    st.header("2. Canaux d'Alertes")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("Discord Webhook")
+        webhook_discord = st.text_input("URL du Webhook Discord", value=config.get("webhook_discord", ""))
+    with c2:
+        st.subheader("Telegram Bot API")
+        telegram_token = st.text_input("Bot Token", value=config.get("telegram_bot_token", ""))
+        telegram_chat = st.text_input("Chat ID", value=config.get("telegram_chat_id", ""))
+        
+    st.header("3. Planification")
+    run_time_val = config.get("run_time", "22:00")
+    run_time_obj = datetime.strptime(run_time_val, "%H:%M").time()
+    run_time = st.time_input("Heure d'exécution quotidienne", value=run_time_obj)
+    
+    if st.button("💾 Sauvegarder la Configuration"):
+        config["webhook_discord"] = webhook_discord
+        config["telegram_bot_token"] = telegram_token
+        config["telegram_chat_id"] = telegram_chat
+        config["tickers"] = selected_tickers
+        config["run_time"] = run_time.strftime("%H:%M")
+        with open(BOT_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=4)
+        st.success("Configuration sauvegardée !")
+        
+    st.divider()
+    st.header("4. Contrôle du Serveur (Daemon)")
+    
+    if config.get("is_active", False):
+        st.success("🟢 Le Bot Headless est actuellement **ACTIF**.")
+        if st.button("🛑 Arrêter le Bot"):
+            config["is_active"] = False
+            with open(BOT_CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=4)
+            st.rerun()
+    else:
+        st.warning("🔴 Le Bot Headless est actuellement **ARRÊTÉ**.")
+        if st.button("🚀 Démarrer le Bot en Arrière-plan"):
+            config["is_active"] = True
+            with open(BOT_CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=4)
+            
+            # Lancer le sous-processus sans bloquer
+            if os.name == 'nt': # Windows
+                subprocess.Popen(["python", "headless_bot.py"], creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else: # Linux/Mac
+                subprocess.Popen(["python3", "headless_bot.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                
+            st.success("Bot démarré en tâche de fond ! Il s'entraînera chaque soir.")
+            st.rerun()
+
 # --- FONCTION PRINCIPALE ---
 def main():
     st.sidebar.title("🧭 Menu Principal")
@@ -2315,6 +2394,7 @@ def main():
         "📈 Terminal de Trading",
         "🕹️ Paper Trading (Virtuel)",
         "🕹️ Paper Trading (Options)",
+        "🤖 Paramétrage du Bot (Headless)",
         "🏢 Fondamentaux Financiers",
         "🧮 Options & Dérivés (Pricing)",
         "🎓 Académie: Stratégie & Risques",
@@ -2386,6 +2466,8 @@ def main():
         page_paper_trading()
     elif menu == "🕹️ Paper Trading (Options)":
         page_options_paper_trading()
+    elif menu == "🤖 Paramétrage du Bot (Headless)":
+        page_bot_config()
     elif menu == "🏢 Fondamentaux Financiers":
         page_fundamentals(tickers)
     elif menu == "🧮 Options & Dérivés (Pricing)":

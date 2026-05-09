@@ -13,3 +13,5 @@ transformers>=4.30.0
 torch>=2.0.0
 lightgbm>=4.0.0
 matplotlib>=3.7.0
+schedule>=1.2.0
+requests>=2.31.0
