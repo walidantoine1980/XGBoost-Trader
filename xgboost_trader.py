@@ -348,7 +348,7 @@ class MLTrader:
         
         return test_data
 
-    def train(self, data, optimize=False):
+    def train(self, data, optimize=False, use_wfa=False, wfa_splits=5, ticker_for_export="UNKNOWN"):
         base_features = ['Returns', 'SMA_20', 'SMA_50', 'SMA_200', 'EMA_9', 'Vol_20', 'RSI', 'MACD', 'Signal_Line', 
                          'BB_Upper', 'BB_Lower', 'BB_Width', 'ATR', 'ADX', 'Volume_Ratio', 'OBV', 'Stoch_K', 'ROC', 
                          'VWAP', 'Lag_1', 'Lag_2', 'Lag_3']
@@ -358,58 +358,130 @@ class MLTrader:
         X = data[features]
         y = data['Target']
         
-        split = int(len(X) * 0.8)
-        X_train, X_test = X.iloc[:split], X.iloc[split:]
-        y_train, y_test = y.iloc[:split], y.iloc[split:]
-        
         # 4. Walk-Forward Validation
         from sklearn.model_selection import TimeSeriesSplit
-        tscv = TimeSeriesSplit(n_splits=3)
         
-        if optimize:
-            # 1. Hyper-Optimisation avec Optuna (Bayésienne)
-            optuna.logging.set_verbosity(optuna.logging.WARNING)
-
-            def objective(trial):
-                param = {
-                    'n_estimators': trial.suggest_int('n_estimators', 50, 300),
-                    'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),
-                    'max_depth': trial.suggest_int('max_depth', 3, 9)
-                }
-                model = xgb.XGBClassifier(**param, objective='binary:logistic', random_state=42)
-                
-                # Walk-Forward Validation pour le score
-                from sklearn.model_selection import cross_val_score
-                score = cross_val_score(model, X_train, y_train, cv=tscv, scoring='accuracy').mean()
-                return score
-
-            # Création de l'étude Optuna
-            study = optuna.create_study(direction='maximize')
-            study.optimize(objective, n_trials=10) # 10 essais pour un bon compromis vitesse/précision
+        if use_wfa:
+            st.info(f"🔄 Mode Walk-Forward Analysis (WFA) activé avec {wfa_splits} intervalles.")
+            tscv = TimeSeriesSplit(n_splits=wfa_splits)
+            out_of_sample_preds = []
+            out_of_sample_indices = []
             
-            best_params = study.best_params
-            self.xgb_model = xgb.XGBClassifier(**best_params, objective='binary:logistic', random_state=42)
-            self.model = VotingClassifier(
-                estimators=[('xgb', self.xgb_model), ('rf', self.rf_model), ('lgb', self.lgb_model)],
-                voting='soft'
-            )
+            for split_idx, (train_index, test_index) in enumerate(tscv.split(X)):
+                X_train_cv, X_test_cv = X.iloc[train_index], X.iloc[test_index]
+                y_train_cv, y_test_cv = y.iloc[train_index], y.iloc[test_index]
+                
+                if optimize:
+                    def objective(trial):
+                        param = {
+                            'n_estimators': trial.suggest_int('n_estimators', 50, 200),
+                            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),
+                            'max_depth': trial.suggest_int('max_depth', 3, 7)
+                        }
+                        model = xgb.XGBClassifier(**param, objective='binary:logistic', random_state=42)
+                        model.fit(X_train_cv, y_train_cv)
+                        return accuracy_score(y_test_cv, model.predict(X_test_cv))
+                    study = optuna.create_study(direction='maximize')
+                    optuna.logging.set_verbosity(optuna.logging.WARNING)
+                    study.optimize(objective, n_trials=5)
+                    best_params = study.best_params
+                    xgb_cv = xgb.XGBClassifier(**best_params, objective='binary:logistic', random_state=42)
+                else:
+                    xgb_cv = xgb.XGBClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, objective='binary:logistic', random_state=42)
+                
+                rf_cv = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
+                lgb_cv = lgb.LGBMClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, random_state=42, verbose=-1)
+                model_cv = VotingClassifier(
+                    estimators=[('xgb', xgb_cv), ('rf', rf_cv), ('lgb', lgb_cv)],
+                    voting='soft'
+                )
+                model_cv.fit(X_train_cv, y_train_cv)
+                probs = model_cv.predict_proba(X_test_cv)[:, 1]
+                
+                out_of_sample_preds.extend(probs)
+                out_of_sample_indices.extend(test_index)
+                
+            test_indices = sorted(list(set(out_of_sample_indices)))
+            test_data = data.iloc[test_indices].copy()
+            
+            prob_series = pd.Series(index=X.index[out_of_sample_indices], data=out_of_sample_preds)
+            test_data['Prob'] = prob_series
+            
+            # Export WFA
+            os.makedirs("wfa_outputs", exist_ok=True)
+            export_df = test_data.copy()
+            export_df['Target_Label'] = y.iloc[test_indices]
+            export_df['WFA_Signal'] = np.where(export_df['Prob'] > 0.55, 1, 0)
+            
+            # On essaie d'ajouter les informations NLP (finBERT) si dispo, au moins pour tracer
+            try:
+                avg_pol, _ = get_news_sentiment(ticker_for_export)
+                export_df['FinBERT_Sentiment'] = avg_pol
+            except:
+                pass
+                
+            export_path = f"wfa_outputs/WFA_{ticker_for_export}_{datetime.now().strftime('%Y%m%d')}.csv"
+            export_df.to_csv(export_path)
+            st.toast(f"Fichier WFA généré : {export_path}", icon="📊")
+            
+            # Modèle final
+            split = int(len(X) * 0.8)
+            X_train, y_train = X.iloc[:split], y.iloc[:split]
+            self.model = model_cv # garde le dernier modele du split
             self.model.fit(X_train, y_train)
-            st.toast(f"Optimisation Optuna (XGBoost) terminée : {best_params}", icon="🧬")
+            
+            test_data['Signal'] = np.where(test_data['Prob'] > 0.55, 1, 0)
+            self.accuracy = accuracy_score(test_data['Target'], test_data['Signal'])
+            
         else:
-            self.model.fit(X_train, y_train)
-        
+            split = int(len(X) * 0.8)
+            X_train, X_test = X.iloc[:split], X.iloc[split:]
+            y_train, y_test = y.iloc[:split], y.iloc[split:]
+            
+            tscv = TimeSeriesSplit(n_splits=3)
+            
+            if optimize:
+                # 1. Hyper-Optimisation avec Optuna (Bayésienne)
+                optuna.logging.set_verbosity(optuna.logging.WARNING)
+    
+                def objective(trial):
+                    param = {
+                        'n_estimators': trial.suggest_int('n_estimators', 50, 300),
+                        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),
+                        'max_depth': trial.suggest_int('max_depth', 3, 9)
+                    }
+                    model = xgb.XGBClassifier(**param, objective='binary:logistic', random_state=42)
+                    
+                    # Walk-Forward Validation pour le score
+                    from sklearn.model_selection import cross_val_score
+                    score = cross_val_score(model, X_train, y_train, cv=tscv, scoring='accuracy').mean()
+                    return score
+    
+                # Création de l'étude Optuna
+                study = optuna.create_study(direction='maximize')
+                study.optimize(objective, n_trials=10) # 10 essais pour un bon compromis vitesse/précision
+                
+                best_params = study.best_params
+                self.xgb_model = xgb.XGBClassifier(**best_params, objective='binary:logistic', random_state=42)
+                self.model = VotingClassifier(
+                    estimators=[('xgb', self.xgb_model), ('rf', self.rf_model), ('lgb', self.lgb_model)],
+                    voting='soft'
+                )
+                self.model.fit(X_train, y_train)
+                st.toast(f"Optimisation Optuna (XGBoost) terminée : {best_params}", icon="🧬")
+            else:
+                self.model.fit(X_train, y_train)
+            
+            test_data = data.iloc[split:].copy()
+            test_data['Prob'] = self.model.predict_proba(X_test)[:, 1]
+            test_data['Signal'] = np.where(test_data['Prob'] > 0.55, 1, 0)
+            self.accuracy = accuracy_score(y_test, self.model.predict(X_test))
+            
         # Récupération de l'importance des variables (Moyenne des 3 modèles)
         importances = np.mean([est.feature_importances_ for est in self.model.estimators_], axis=0)
         self.feature_importances = pd.DataFrame(
             {'Feature': features, 'Importance': importances}
         ).sort_values(by='Importance', ascending=True)
-        
-        # Backtest
-        test_data = data.iloc[split:].copy()
-        test_data['Prob'] = self.model.predict_proba(X_test)[:, 1]
-        
-        # Signal de base
-        test_data['Signal'] = np.where(test_data['Prob'] > 0.55, 1, 0)
         
         # 3. Filtre Macro-économique (Régime de Krach)
         if 'VIX' in test_data.columns:
@@ -421,7 +493,6 @@ class MLTrader:
         test_data = self.run_event_driven_backtest(test_data)
         
         self.backtest_results = test_data
-        self.accuracy = accuracy_score(y_test, self.model.predict(X_test))
         self.calculate_advanced_metrics(test_data)
         self.is_trained = True
         return features
@@ -505,12 +576,19 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
     if macro_df is not None:
         df = df.join(macro_df, how='left').ffill().dropna()
     
+    st.divider()
+    c_wfa1, c_wfa2 = st.columns([1, 2])
+    with c_wfa1:
+        use_wfa = st.checkbox("Activer Walk-Forward Analysis (WFA)", value=False, help="Génère un test plus robuste sur plusieurs périodes et exporte les résultats en CSV.")
+    with c_wfa2:
+        wfa_splits = st.slider("Nombre d'intervalles WFA", min_value=2, max_value=10, value=5) if use_wfa else 5
+
     col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
     
     with col1:
         if st.button("🧠 Entraîner l'IA sur cette action", use_container_width=True):
             with st.status("Entraînement en cours...") as status:
-                features = trader.train(df, optimize=optimize_model)
+                features = trader.train(df, optimize=optimize_model, use_wfa=use_wfa, wfa_splits=wfa_splits, ticker_for_export=ticker)
                 st.session_state[f"features_{ticker}"] = features
                 status.update(label="✅ Modèle entraîné !", state="complete")
                 
@@ -1059,6 +1137,13 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
     2. **Les Vues (L'Alpha XGBoost)** : Le modèle de *Black-Litterman* (Goldman Sachs) prend l'équilibre initial et le "tord" mathématiquement en fonction de la conviction de notre IA sur chaque action.
     """)
     
+    st.divider()
+    c_wfa1, c_wfa2 = st.columns([1, 2])
+    with c_wfa1:
+        use_wfa = st.checkbox("Activer Walk-Forward Analysis (WFA) pour l'ensemble du portefeuille", value=False)
+    with c_wfa2:
+        wfa_splits = st.slider("Nombre d'intervalles WFA", min_value=2, max_value=10, value=5, key="wfa_slider_port") if use_wfa else 5
+
     if st.button("🧠 Entraîner et Optimiser le Portefeuille", use_container_width=True):
         with st.status("Analyse Macro & Entraînement des modèles...") as status:
             data_dict = {}
@@ -1090,7 +1175,7 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
                 if macro_df is not None:
                     df = df.join(macro_df, how='left').ffill().dropna()
                 trader = MLTrader()
-                features = trader.train(df, optimize=optimize_model)
+                features = trader.train(df, optimize=optimize_model, use_wfa=use_wfa, wfa_splits=wfa_splits, ticker_for_export=t)
                 st.session_state[f"port_trader_{t}"] = trader
                 
                 # Prédiction actuelle pour le Black-Litterman (La Vue)
