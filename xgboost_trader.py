@@ -2330,11 +2330,33 @@ def page_bot_config():
         }
         
     st.header("1. Cibles d'Analyse Nocturne")
-    selected_tickers = st.multiselect(
-        "Quelles actions le bot doit-il analyser chaque nuit ?",
-        options=list(MAJOR_STOCKS.keys())[1:],
-        default=config.get("tickers", ["Apple Inc. (US)"])
+    
+    portfolio_choice = st.selectbox(
+        "💡 Sélection rapide de portefeuille",
+        options=list(PREDEFINED_PORTFOLIOS.keys()),
+        index=0
     )
+    
+    if portfolio_choice != "Sélection Manuelle":
+        default_selection = PREDEFINED_PORTFOLIOS[portfolio_choice]
+    else:
+        default_selection = config.get("tickers", ["Apple Inc. (US)"])
+        
+    valid_defaults = [s for s in default_selection if s in MAJOR_STOCKS.keys()]
+    
+    stock_choices = st.multiselect(
+        "Rechercher une ou plusieurs actions",
+        options=list(MAJOR_STOCKS.keys())[1:],
+        default=valid_defaults
+    )
+    
+    selected_tickers = []
+    selected_tickers.extend(stock_choices)
+    
+    # Ajout silencieux des tickers personnalisés du portefeuille (ex: Chine)
+    for s in default_selection:
+        if s not in MAJOR_STOCKS.keys() and s not in selected_tickers:
+            selected_tickers.append(s)
     
     st.header("2. Canaux d'Alertes")
     c1, c2 = st.columns(2)
