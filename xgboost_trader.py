@@ -951,7 +951,9 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model):
             # --- NOUVEAU : SHAP WATERFALL ---
             st.markdown("### 🔬 Explicabilité de la décision du jour (SHAP)")
             try:
-                explainer = shap.TreeExplainer(trader.xgb_model)
+                # Dans un VotingClassifier, les modèles entraînés sont dans estimators_
+                fitted_xgb = trader.model.estimators_[0]
+                explainer = shap.TreeExplainer(fitted_xgb)
                 shap_values = explainer.shap_values(last_row[features])
                 
                 if isinstance(shap_values, list):
@@ -2077,6 +2079,105 @@ def page_options_pricing(tickers):
             st.balloons()
         else:
             st.error("Fonds insuffisants dans votre portefeuille d'options virtuel.")
+
+    # --- SURFACE DE VOLATILITÉ ET ANOMALIES ---
+    st.divider()
+    st.header("🌊 Surface de Volatilité & Scanner d'Anomalies (Live Market)")
+    st.markdown("Récupération en temps réel des contrats d'options pour tracer le **Volatility Smile** 3D et détecter les options **Surévaluées/Sous-évaluées** par le marché.")
+    
+    if st.button("🔍 Lancer le Scanner d'Options en Direct", use_container_width=True):
+        with st.spinner("Téléchargement de la chaîne d'options depuis le marché (Cela peut prendre quelques secondes)..."):
+            try:
+                ticker_obj = yf.Ticker(ticker)
+                expirations = ticker_obj.options
+                
+                if not expirations:
+                    st.warning("Aucune chaîne d'options disponible pour cette action sur le marché public.")
+                else:
+                    data_calls = []
+                    # On limite aux 5 prochaines échéances pour ne pas figer l'application
+                    for exp in expirations[:5]:
+                        try:
+                            chain = ticker_obj.option_chain(exp)
+                            calls = chain.calls
+                            
+                            days_to_exp = (pd.to_datetime(exp) - datetime.now()).days
+                            if days_to_exp <= 0:
+                                continue
+                                
+                            for _, row in calls.iterrows():
+                                strike = row['strike']
+                                # Filtre pour ne garder que les strikes proches de la monnaie (± 30%)
+                                if 0.7 * S_input <= strike <= 1.3 * S_input:
+                                    iv = row['impliedVolatility']
+                                    bid = row['bid']
+                                    ask = row['ask']
+                                    mid_price = (bid + ask) / 2.0
+                                    
+                                    # Calcul du prix théorique avec la Volatilité Historique (sigma_hist) pour trouver l'anomalie
+                                    theo_price = black_scholes(S_input, strike, days_to_exp/365.0, r, sigma_hist, 'call')[0]
+                                    
+                                    if theo_price > 0:
+                                        overval_pct = ((mid_price - theo_price) / theo_price) * 100
+                                    else:
+                                        overval_pct = 0
+                                        
+                                    data_calls.append({
+                                        'Strike': strike,
+                                        'Jours_Expiration': days_to_exp,
+                                        'IV': iv,
+                                        'Prix_Marché': mid_price,
+                                        'Prix_Théorique': theo_price,
+                                        'Écart_Surévaluation_%': overval_pct
+                                    })
+                        except:
+                            continue
+                    
+                    if data_calls:
+                        df_surf = pd.DataFrame(data_calls)
+                        
+                        st.subheader("📊 Surface de Volatilité 3D (Implied Volatility)")
+                        fig_3d = go.Figure(data=[go.Mesh3d(
+                            x=df_surf['Strike'],
+                            y=df_surf['Jours_Expiration'],
+                            z=df_surf['IV'],
+                            intensity=df_surf['IV'],
+                            colorscale='Viridis',
+                            opacity=0.8
+                        )])
+                        fig_3d.update_layout(
+                            scene=dict(
+                                xaxis_title="Strike ($)",
+                                yaxis_title="Jours avant Expiration",
+                                zaxis_title="Volatilité Implicite (σ)"
+                            ),
+                            template="plotly_dark",
+                            height=600,
+                            margin=dict(l=0, r=0, b=0, t=30)
+                        )
+                        st.plotly_chart(fig_3d, use_container_width=True)
+                        
+                        st.subheader("🚨 Scanner d'Anomalies (Opportunités d'Arbitrage)")
+                        st.markdown("Ce tableau compare le Prix du Marché (Mid-Price) au Prix Théorique de Black-Scholes. Les contrats fortement surévalués sont d'excellents candidats pour des stratégies de vente (Short Call).")
+                        
+                        # Trier par les contrats les plus surévalués
+                        df_anomalies = df_surf.sort_values(by='Écart_Surévaluation_%', ascending=False).head(15)
+                        
+                        # Formatage visuel avec Pandas Styler
+                        st.dataframe(
+                            df_anomalies.style.format({
+                                'Strike': '{:.2f} $',
+                                'IV': '{:.2%}',
+                                'Prix_Marché': '{:.2f} $',
+                                'Prix_Théorique': '{:.2f} $',
+                                'Écart_Surévaluation_%': '{:+.2f} %'
+                            }).background_gradient(subset=['Écart_Surévaluation_%'], cmap='RdYlGn_r'),
+                            use_container_width=True
+                        )
+                    else:
+                        st.error("Erreur lors de l'extraction des données ou aucun contrat liquide trouvé.")
+            except Exception as e:
+                st.error(f"Erreur de connexion à l'API de marché : {e}")
 
 def page_options_academy():
     st.title("🎓 Académie : Options & Black-Scholes (Niveau Avancé)")
