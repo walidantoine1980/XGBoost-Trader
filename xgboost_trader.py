@@ -601,6 +601,17 @@ def get_company_name_from_yahoo(yahoo_ticker):
                 return f"{clean_name} ({yahoo_ticker})"
     return yahoo_ticker
 
+def get_option_multiplier_and_legislation(ticker):
+    """
+    Retourne le multiplicateur et la législation applicable selon le ticker.
+    US: 100 actions/contrat
+    EU: 10 actions/contrat (règle simplifiée basée sur le suffixe)
+    """
+    eu_suffixes = ['.PA', '.L', '.TO', '.F', '.MI', '.MC', '.AS', '.BR', '.LS', '.SW', '.DE']
+    if any(ticker.endswith(suffix) for suffix in eu_suffixes):
+        return 10, "Législation Européenne (10 actions/contrat - Exercice à l'échéance uniquement)"
+    return 100, "Législation Américaine (100 actions/contrat - Exercice et revente libres)"
+
 # --- MODES D'AFFICHAGE ---
 
 def run_single_mode(ticker, period, interval, initial_capital, optimize_model, use_wfa=False, wfa_train_window="5Y", wfa_step="6M", wfa_start_date=None, wfa_end_date=None):
@@ -853,6 +864,7 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model, u
         r_opt = 0.05
         
         if prob > 0.55:
+            multiplier, legislation = get_option_multiplier_and_legislation(ticker)
             # Recommande un Call ATM à 30 jours
             strike_opt = round(current_price_opt, 2)
             t_opt_days = 30
@@ -866,7 +878,8 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model, u
             """)
             c_o2.markdown(f"""
             - **Prime Estimée (Coût)** : {price_opt:.2f} $ par action
-            - **Coût total du contrat (x100)** : {price_opt*100:.2f} $
+            - **Coût total du contrat (x{multiplier})** : {price_opt*multiplier:.2f} $
+            - **Norme** : {legislation}
             """)
             c_o3.markdown(f"""
             - **Levier Estimé** : {(current_price_opt * delta_opt) / price_opt:.1f}x
@@ -874,7 +887,7 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model, u
             
             # --- EXÉCUTION CALL OPTIONS ---
             if price_opt > 0:
-                cost_per_contract = price_opt * 100
+                cost_per_contract = price_opt * multiplier
                 qty_to_buy = int(max_loss / cost_per_contract) if cost_per_contract > 0 else 0
                 qty_to_buy = max(1, qty_to_buy) # Au moins 1 contrat
                 total_premium = qty_to_buy * cost_per_contract
@@ -891,6 +904,7 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model, u
                             'days_to_expiry': t_opt_days,
                             'premium': price_opt,
                             'qty': qty_to_buy,
+                            'multiplier': multiplier,
                             'underlying_price_at_buy': current_price_opt,
                             'buy_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         }
@@ -908,6 +922,7 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model, u
                     else:
                         st.error("Fonds virtuels (Options) insuffisants.")
         elif prob < 0.45:
+            multiplier, legislation = get_option_multiplier_and_legislation(ticker)
             # Recommande un Put ATM à 30 jours
             strike_opt = round(current_price_opt, 2)
             t_opt_days = 30
@@ -921,7 +936,8 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model, u
             """)
             c_o2.markdown(f"""
             - **Prime Estimée (Coût)** : {price_opt:.2f} $ par action
-            - **Coût total du contrat (x100)** : {price_opt*100:.2f} $
+            - **Coût total du contrat (x{multiplier})** : {price_opt*multiplier:.2f} $
+            - **Norme** : {legislation}
             """)
             c_o3.markdown(f"""
             - **Levier Estimé** : {(current_price_opt * abs(delta_opt)) / price_opt:.1f}x
@@ -929,7 +945,7 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model, u
             
             # --- EXÉCUTION PUT OPTIONS ---
             if price_opt > 0:
-                cost_per_contract = price_opt * 100
+                cost_per_contract = price_opt * multiplier
                 qty_to_buy = int(max_loss / cost_per_contract) if cost_per_contract > 0 else 0
                 qty_to_buy = max(1, qty_to_buy) # Au moins 1 contrat
                 total_premium = qty_to_buy * cost_per_contract
@@ -946,6 +962,7 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model, u
                             'days_to_expiry': t_opt_days,
                             'premium': price_opt,
                             'qty': qty_to_buy,
+                            'multiplier': multiplier,
                             'underlying_price_at_buy': current_price_opt,
                             'buy_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         }
@@ -1955,8 +1972,11 @@ def page_options_paper_trading():
             # Nouvelle estimation du contrat
             current_premium, delta, gamma, theta, vega = black_scholes(current_price, K, T, r, sigma, opt_type.lower())
             
-            value = qty * current_premium * 100 # *100 car 1 contrat = 100 actions en général
-            buy_value = qty * avg_price * 100
+            # Utilise le multiplicateur enregistré ou tente de le retrouver
+            multiplier = data.get('multiplier', get_option_multiplier_and_legislation(t)[0])
+            
+            value = qty * current_premium * multiplier # *multiplier selon la norme
+            buy_value = qty * avg_price * multiplier
             pnl = value - buy_value
             pnl_pct = (pnl / buy_value) * 100 if buy_value > 0 else 0
             
@@ -1967,12 +1987,21 @@ def page_options_paper_trading():
                 col1.write(f"**Strike (K):** {K} $")
                 col1.write(f"**Prime d'Achat:** {avg_price:.2f} $")
                 col1.write(f"**Prix Sous-jacent actuel:** {current_price:.2f} $")
+                col1.write(f"**Jours restants:** {T_days}")
                 
                 col2.write(f"**Prime Actuelle (BS):** {current_premium:.2f} $")
-                col2.write(f"**Delta:** {delta:.3f}")
-                col2.write(f"**Jours restants:** {T_days}")
+                col2.write(f"**Delta (Direction):** {delta:.3f}")
+                col2.write(f"**Gamma (Accélération):** {gamma:.3f}")
+                col2.write(f"**Theta (Usure/Temps):** {theta:.3f}")
+                col2.write(f"**Vega (Volatilité):** {vega:.3f}")
                 
-                if st.button(f"🔴 Revendre le contrat", key=f"liq_opt_{contract_id}"):
+                is_eu = "Européenne" in get_option_multiplier_and_legislation(t)[1]
+                can_sell = not (is_eu and T_days > 0)
+                
+                if not can_sell:
+                    st.warning("⚠️ Législation EU : Exercice et Revente bloqués avant l'échéance.")
+                
+                if st.button(f"🔴 Revendre le contrat", key=f"liq_opt_{contract_id}", disabled=not can_sell):
                     revenue = value
                     pf['cash'] += revenue
                     pf['history'].append({
@@ -2234,8 +2263,10 @@ def page_options_pricing(tickers):
     # --- ACHAT VIRTUEL ---
     st.divider()
     st.subheader("🛒 Exécution Virtuelle (Paper Trading)")
-    qty_options = st.number_input("Nombre de contrats (1 contrat = 100 actions)", min_value=1, value=1)
-    cout_total = qty_options * price * 100
+    multiplier, legislation = get_option_multiplier_and_legislation(ticker)
+    st.write(f"**Norme applicable :** {legislation}")
+    qty_options = st.number_input(f"Nombre de contrats (1 contrat = {multiplier} actions)", min_value=1, value=1)
+    cout_total = qty_options * price * multiplier
     st.info(f"Coût total de la prime à payer : **{cout_total:.2f} $**")
     
     if st.button("✅ Acheter ce contrat (Paper Trading)", use_container_width=True):
@@ -2250,6 +2281,7 @@ def page_options_pricing(tickers):
                 'days_to_expiry': T_days,
                 'premium': price,
                 'qty': qty_options,
+                'multiplier': multiplier,
                 'underlying_price_at_buy': S_input,
                 'buy_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
@@ -2426,32 +2458,36 @@ def page_options_academy():
         st.subheader("Δ (Delta) : Le Compteur de Vitesse")
         st.markdown("""
         **Que se passe-t-il si l'action monte de 1$ ?**
-        *   Un Call ATM a généralement un Delta de 0.50. Si l'action monte de 1$, l'option prend 0.50$.
-        *   **Concept :** Le Delta représente la "probabilité" que l'option finisse gagnante.
+        *   Un Call ATM (A la Monnaie) a généralement un Delta de 0.50. Si l'action monte de 1$, l'option prend 0.50$.
+        *   **Exemple Numérique :** Tu as acheté un contrat Call AAPL (Delta 0.50) pour 500$ (5$ de prime). Si AAPL passe de 150$ à 151$, la prime de ton contrat monte à 5.50$. Ton contrat vaut maintenant 550$. Tu viens de gagner 50$ !
+        *   **Concept :** Le Delta représente aussi la "probabilité" perçue par le marché que l'option finisse gagnante. Un Delta de 0.20 signifie que le marché estime qu'il n'y a que 20% de chances d'être rentable.
         """)
         
         st.subheader("Θ (Theta) : Le Sablier Mortel")
         st.markdown("""
         **Que se passe-t-il si une journée passe sans que le prix ne bouge ?**
-        *   Le Theta est toujours négatif pour l'acheteur. C'est le loyer quotidien (Time Decay).
-        *   C'est pour cela que 80% des acheteurs d'options perdent de l'argent : le temps les détruit.
+        *   Le Theta est le "loyer" quotidien (Time Decay).
+        *   **Exemple Numérique :** Tu achètes une option à 300$ avec un Theta de -10$. Lundi, l'action ne bouge pas. Mardi matin, ton option ne vaut plus que 290$. Mercredi, 280$. Le temps joue *contre* l'acheteur et *pour* le vendeur.
+        *   C'est pour cela que 80% des acheteurs d'options perdent : le temps détruit lentement la valeur de leur contrat.
         """)
         
     with c2:
         st.subheader("Γ (Gamma) : L'Accélération (Le Danger)")
         st.markdown("""
         **Que se passe-t-il si l'action accélère violemment ?**
-        *   Le Gamma mesure à quelle vitesse le Delta change.
+        *   Le Gamma mesure à quelle vitesse le Delta change. C'est l'accélération de ton véhicule.
+        *   **Exemple Numérique :** Tu as un Call avec un Delta de 0.50 et un Gamma de 0.10. Si l'action monte de 1$, ton Delta devient 0.60 ! Au prochain dollar de hausse de l'action, l'option ne prendra plus 0.50$, mais 0.60$. Plus ça monte, plus ça gagne vite !
         
         > [!WARNING]
         > **Le Gamma Squeeze (L'Affaire GameStop 2021) :**
-        > Quand les particuliers ont acheté des millions de *Calls* OTM (hors de la monnaie) sur GameStop, les Market Makers (les vendeurs) se sont retrouvés avec un risque énorme. Pour se couvrir (Delta Hedging), les algorithmes des Market Makers ont été forcés d'acheter l'action GameStop. Plus l'action montait, plus le Gamma augmentait le Delta, forçant les algorithmes à acheter *encore plus* d'actions. C'est une réaction en chaîne nucléaire.
+        > Quand les particuliers ont acheté des millions de *Calls* OTM sur GameStop, les vendeurs se sont retrouvés avec un Gamma explosif. Pour se couvrir, leurs algorithmes ont été forcés d'acheter l'action. Plus l'action montait, plus le Gamma augmentait le Delta, forçant les algorithmes à acheter *encore plus* d'actions. Une véritable réaction en chaîne nucléaire.
         """)
         
         st.subheader("ν (Vega) : Le Détecteur de Panique")
         st.markdown("""
         **Que se passe-t-il si le marché devient nerveux ?**
-        *   Si le marché panique, la volatilité (le VIX) augmente. La valeur de votre option va gonfler du montant du Vega, même si l'action ne bouge pas d'un centime !
+        *   La valeur de l'option gonfle du montant du Vega pour chaque 1% de volatilité (IV) supplémentaire.
+        *   **Exemple Numérique :** Tu détiens un PUT (assurance à la baisse). L'action stagne, mais la Fed annonce une très mauvaise nouvelle. La panique envahit Wall Street (la Volatilité passe de 20% à 30%). Si ton Vega est de 15$, ton contrat s'apprécie soudainement de 150$ (10 x 15$) simplement parce que *la peur* a augmenté !
         """)
         
     st.divider()
@@ -2482,6 +2518,25 @@ def page_options_academy():
     
     > [!TIP]
     > C'est pour cela que les Quants institutionnels **vendent** des options (Short Volatility) avant les earnings. Ils encaissent la prime hors de prix, et le lendemain matin, l'IV Crush détruit le contrat, leur permettant d'empocher l'argent sans rien faire.
+    """)
+
+    st.divider()
+    st.header("⚖️ Partie 7 : L'Impact Législatif (Norme US vs Norme EU)")
+    st.markdown("""
+    Vous avez peut-être remarqué dans notre simulateur la mention **"Législation Européenne"** ou **"Législation Américaine"**.
+    
+    ### 1. La taille du contrat (Multiplicateur)
+    - **États-Unis (AAPL, TSLA, etc.) :** 1 contrat standard représente **100 actions**. Si la prime est de 2$, l'achat vous coûtera 200$.
+    - **Europe (LVMH, ASML, etc.) :** Souvent, 1 contrat représente **10 actions** (standard Euronext pour les actions très valorisées). Si la prime est de 2$, le contrat coûte 20$.
+    
+    ### 2. Le droit d'Exercice (Le piège théorique)
+    - **Options Américaines : Exercice Libre.** Vous pouvez appeler le vendeur du contrat n'importe quel jour avant l'échéance et dire "J'exerce mon droit, vends-moi les actions au prix convenu aujourd'hui !".
+    - **Options Européennes : Exercice à l'Échéance uniquement.** Vous êtes "bloqué" jusqu'à la date d'expiration pour transformer l'option en actions. 
+    
+    > **Exemple de Revente (Marché Secondaire) :**
+    > Rassurez-vous, si vous détenez un contrat Européen qui a fait +300% de gain latent, vous n'êtes pas obligé d'attendre l'échéance pour encaisser ! Vous pouvez simplement **Revendre le contrat (la prime)** à un autre trader sur le marché secondaire. L'interdiction porte uniquement sur la *livraison physique des actions*, pas sur la spéculation de la prime.
+    > 
+    > *Cependant, dans notre simulateur de Paper Trading, pour des raisons pédagogiques extrêmes, le bouton de revente des options européennes est volontairement bloqué pour vous faire ressentir pleinement cette contrainte temporelle !*
     """)
 
 def page_bot_config():
