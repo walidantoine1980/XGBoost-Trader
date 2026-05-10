@@ -2196,10 +2196,12 @@ def page_options_pricing(tickers):
         opt_type = st.radio("Type d'Option", ["Call", "Put"], index=default_opt_index)
         
     price, delta, gamma, theta, vega = black_scholes(S_input, K, T, r, sigma, opt_type.lower())
+    multiplier, legislation = get_option_multiplier_and_legislation(ticker)
     
     st.divider()
-    st.subheader(f"Valeur Théorique de l'Option ({opt_type}) : **{price:.2f} $**")
+    st.subheader(f"Valeur Théorique de l'Option (Black-Scholes) : **{price:.2f} $** par action")
     
+    st.info(f"💡 **Prime vs Contrat :** La valeur ci-dessus est la 'Prime' calculée pour **1 action**. Or, la norme de ce titre ({legislation}) impose des lots de **{multiplier} actions**.\n\n👉 **Le coût réel d'un contrat (1 lot) sera donc de : {price:.2f} $ × {multiplier} = {price * multiplier:.2f} $**")
     st.write("### Les Greeks (Paramètres de Risque)")
     g1, g2, g3, g4 = st.columns(4)
     g1.metric("Delta (Δ)", f"{delta:.3f}", help="Sensibilité au prix. Si l'action monte de 1$, l'option prendra Delta $. (0 à 1 pour Call, -1 à 0 pour Put).")
@@ -2210,6 +2212,7 @@ def page_options_pricing(tickers):
     # --- GRAPHIQUE DE PAYOFF ---
     st.divider()
     st.subheader("📊 Graphique de Payoff à l'expiration")
+    st.markdown(f"**Pourquoi le graphique commence-t-il dans le rouge ?** Parce que pour obtenir ce droit d'acheter/vendre, vous avez payé la Prime aujourd'hui ({price:.2f} $ par action). Pour être rentable au moment de l'expiration, l'action devra donc bouger suffisamment pour rembourser cette prime : c'est le **Break-Even (Seuil de Rentabilité)**.")
     
     # Générer des prix possibles à l'expiration (±30% autour du strike)
     prices_range = np.linspace(K * 0.7, K * 1.3, 100)
@@ -2263,11 +2266,10 @@ def page_options_pricing(tickers):
     # --- ACHAT VIRTUEL ---
     st.divider()
     st.subheader("🛒 Exécution Virtuelle (Paper Trading)")
-    multiplier, legislation = get_option_multiplier_and_legislation(ticker)
     st.write(f"**Norme applicable :** {legislation}")
-    qty_options = st.number_input(f"Nombre de contrats (1 contrat = {multiplier} actions)", min_value=1, value=1)
+    qty_options = st.number_input(f"Combien de contrats souhaitez-vous acheter ? (1 contrat = {multiplier} actions)", min_value=1, value=1)
     cout_total = qty_options * price * multiplier
-    st.info(f"Coût total de la prime à payer : **{cout_total:.2f} $**")
+    st.info(f"💰 **Total débité de votre compte virtuel :** {qty_options} contrats × {price*multiplier:.2f} $ = **{cout_total:.2f} $**")
     
     if st.button("✅ Acheter ce contrat (Paper Trading)", use_container_width=True):
         pf_opt = load_options_portfolio()
