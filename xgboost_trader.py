@@ -464,9 +464,12 @@ class MLTrader:
                 X_test, y_test_slice = X[mask_test], y[mask_test]
                 
                 if len(X_train) < 50 or len(X_test) == 0:
+                    st.write(f"⏩ *Passage* : Données insuffisantes pour la période du {current_date.strftime('%Y-%m-%d')}")
                     current_date += step_size
                     continue
                     
+                st.write(f"⏳ **Entraînement WFA** : Historique {train_start.strftime('%Y-%m-%d')} à {current_date.strftime('%Y-%m-%d')} | **Test (Prédiction)** : {current_date.strftime('%Y-%m-%d')} à {test_end.strftime('%Y-%m-%d')}...")
+                
                 self.xgb_model = xgb.XGBClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, objective='binary:logistic', random_state=42)
                 self.rf_model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
                 self.lgb_model = lgb.LGBMClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, random_state=42, verbose=-1)
@@ -479,6 +482,9 @@ class MLTrader:
                 
                 prob = self.model.predict_proba(X_test)[:, 1]
                 pred = self.model.predict(X_test)
+                
+                step_acc = accuracy_score(y_test_slice, pred)
+                st.write(f"✅ **Pas terminé** -> Précision sur ce sous-test : **{step_acc:.2%}**")
                 
                 test_slice = data[mask_test].copy()
                 test_slice['Prob'] = prob
