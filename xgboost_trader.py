@@ -1221,13 +1221,10 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
             # Application du modèle
             bl_weights = get_black_litterman_weights(returns_df, market_weights, views_dict)
             
-            st.divider()
-            st.write("📈 **Pondérations Finales (Black-Litterman)** :")
+            st.session_state["bl_weights"] = bl_weights
+            st.session_state["market_weights"] = market_weights
             
             for t, w in bl_weights.items():
-                m_w = market_weights[t]
-                diff = w - m_w
-                st.write(f"- **{t}** : {w*100:.1f}% ({initial_capital * w:,.2f} $) | *(Prior: {m_w*100:.1f}%, Ajustement IA: {diff*100:+.1f}%)*")
                 st.session_state[f"port_capital_{t}"] = initial_capital * w
                 
             status.update(label="✅ Portefeuille Institutionnel généré et optimisé !", state="complete")
@@ -1235,6 +1232,22 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
     is_ready = all(f"port_trader_{t}" in st.session_state for t in tickers)
     
     if is_ready:
+        if "bl_weights" in st.session_state:
+            st.subheader("💼 Allocation Optimisée du Portefeuille (Signal d'Investissement)")
+            bl_weights = st.session_state["bl_weights"]
+            market_weights = st.session_state["market_weights"]
+            
+            cols = st.columns(min(len(tickers), 4))
+            idx = 0
+            for t, w in bl_weights.items():
+                if t in tickers:
+                    m_w = market_weights.get(t, 0)
+                    diff = w - m_w
+                    with cols[idx % 4]:
+                        st.metric(label=f"Action {t}", value=f"{w*100:.1f}%", delta=f"{diff*100:+.1f}% (Ajustement IA)")
+                        st.write(f"Capital: **{initial_capital * w:,.2f} $**")
+                    idx += 1
+            st.divider()
         all_port_strategy = pd.DataFrame()
         all_port_market = pd.DataFrame()
         
