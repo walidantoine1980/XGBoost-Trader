@@ -2750,8 +2750,13 @@ Ta mission est de rédiger un rapport structuré en français (Markdown) contena
 Ne mets pas de blabla d'introduction de chatbot, va droit au but avec un ton très professionnel, technique et institutionnel. Utilise du gras et des listes à puces.
 """
                 # 3. Generation
-                model = genai.GenerativeModel('gemini-1.5-pro')
-                response = model.generate_content(prompt)
+                try:
+                    model = genai.GenerativeModel('gemini-1.5-pro-latest')
+                    response = model.generate_content(prompt)
+                except Exception as e_inner:
+                    # Fallback sur l'ancien modèle si le nouveau n'est pas dispo
+                    model = genai.GenerativeModel('gemini-pro')
+                    response = model.generate_content(prompt)
                 
                 st.success("Analyse terminée avec succès !")
                 st.markdown(response.text)
