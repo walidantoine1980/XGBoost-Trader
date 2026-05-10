@@ -1,6 +1,60 @@
 # Base de données locale des grandes actions (EU & US)
 # Format attendu par notre convertisseur : Google Finance (Bourse:Symbole)
 
+import os
+import csv
+import difflib
+
+def _get_best_match(name):
+    for k in MAJOR_STOCKS.keys():
+        if k == '--- Saisir manuellement ---': continue
+        clean_k = k.split(' (')[0].lower()
+        if clean_k in name.lower() or name.lower() in clean_k:
+            return k
+            
+    best_match = None
+    best_score = 0
+    for k in MAJOR_STOCKS.keys():
+        if k == '--- Saisir manuellement ---': continue
+        clean_k = k.split(' (')[0]
+        score = difflib.SequenceMatcher(None, name.lower(), clean_k.lower()).ratio()
+        if score > best_score:
+            best_score = score
+            best_match = k
+            
+    if best_score > 0.65:
+        return best_match
+    return None
+
+def _load_dynamic_watchlists():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    watchlists_dir = os.path.join(base_dir, "WatchList")
+    
+    portfolios = {}
+    if os.path.exists(watchlists_dir):
+        for file in os.listdir(watchlists_dir):
+            if not file.endswith('.csv'): continue
+            list_name = f"📂 {file.split('_Watchlist')[0]}"
+            stocks = []
+            
+            try:
+                with open(os.path.join(watchlists_dir, file), 'r', encoding='utf-8-sig') as f:
+                    reader = csv.DictReader(f, delimiter=';')
+                    for row in reader:
+                        n = row.get('Name') or row.get('Nom')
+                        if not n: continue
+                        # Ignorer le Forex et les cryptos
+                        if row.get('Exchange') == 'FX' or 'EUR' in n or 'USD' in n or 'Futures' in n: continue
+                        
+                        match = _get_best_match(n)
+                        if match and match not in stocks:
+                            stocks.append(match)
+                if stocks:
+                    portfolios[list_name] = stocks
+            except Exception:
+                pass
+    return portfolios
+
 MAJOR_STOCKS = {
     "--- Saisir manuellement ---": "CUSTOM",
     "3M (US)": "NASDAQ:MMM",
@@ -612,3 +666,10 @@ PREDEFINED_PORTFOLIOS = {
         "BABA", "TCEHY", "BYDDY", "BIDU", "JD"
     ]
 }
+
+# Chargement dynamique des portefeuilles depuis le dossier WatchList
+try:
+    DYNAMIC_PORTFOLIOS = _load_dynamic_watchlists()
+    PREDEFINED_PORTFOLIOS.update(DYNAMIC_PORTFOLIOS)
+except Exception as e:
+    pass
