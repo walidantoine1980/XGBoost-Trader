@@ -2001,21 +2001,98 @@ def page_options_paper_trading():
                 if not can_sell:
                     st.warning("⚠️ Législation EU : Exercice et Revente bloqués avant l'échéance.")
                 
-                if st.button(f"🔴 Revendre le contrat", key=f"liq_opt_{contract_id}", disabled=not can_sell):
-                    revenue = value
-                    pf['cash'] += revenue
-                    pf['history'].append({
-                        'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        'action': 'SELL OPTION',
-                        'ticker': t,
-                        'contract': f"{opt_type.upper()} Strike {K}",
-                        'qty': qty,
-                        'premium_sold': current_premium,
-                        'total_received': revenue,
-                        'pnl': pnl
-                    })
-                    keys_to_remove.append(contract_id)
-                    st.success(f"Contrat sur {t} revendu avec succès !")
+                c_btn1, c_btn2 = st.columns(2)
+                
+                with c_btn1:
+                    if st.button(f"🔴 Revendre le contrat", key=f"liq_opt_{contract_id}", disabled=not can_sell, use_container_width=True):
+                        revenue = value
+                        pf['cash'] += revenue
+                        pf['history'].append({
+                            'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            'action': 'SELL OPTION',
+                            'ticker': t,
+                            'contract': f"{opt_type.upper()} Strike {K}",
+                            'qty': qty,
+                            'premium_sold': current_premium,
+                            'total_received': revenue,
+                            'pnl': pnl
+                        })
+                        keys_to_remove.append(contract_id)
+                        st.success(f"Contrat sur {t} revendu avec succès !")
+                
+                with c_btn2:
+                    if st.button(f"📈 Analyser le Cycle de Vie", key=f"life_btn_{contract_id}", use_container_width=True):
+                        if st.session_state.get('show_lifecycle_for') == contract_id:
+                            st.session_state['show_lifecycle_for'] = None
+                        else:
+                            st.session_state['show_lifecycle_for'] = contract_id
+                        st.rerun()
+
+                if st.session_state.get('show_lifecycle_for') == contract_id:
+                    with st.spinner("⏳ Reconstruction de la timeline du contrat..."):
+                        try:
+                            # Extraction de la date d'achat du contract_id (format YYYYMMDDHHMMSS)
+                            purchase_date_str = contract_id.split('_')[-1]
+                            purchase_dt = datetime.strptime(purchase_date_str, "%Y%m%d%H%M%S")
+                            start_date = purchase_dt.strftime("%Y-%m-%d")
+                            
+                            hist_df = yf.download(t, start=start_date, progress=False)
+                            
+                            if not hist_df.empty:
+                                dates = []
+                                prices = []
+                                bs_premiums = []
+                                deltas = []
+                                thetas = []
+                                
+                                for date, row in hist_df.iterrows():
+                                    days_passed = (date.tz_localize(None) - purchase_dt).days
+                                    if days_passed < 0: days_passed = 0
+                                    current_T_days = T_days - days_passed
+                                    if current_T_days <= 0: current_T_days = 0.001
+                                    
+                                    spot = row['Close'].item() if isinstance(row['Close'], pd.Series) else row['Close']
+                                    
+                                    p, d, g, th, v = black_scholes(spot, K, current_T_days/365.0, r, sigma, opt_type.lower())
+                                    
+                                    dates.append(date)
+                                    prices.append(spot)
+                                    bs_premiums.append(p * multiplier * qty)
+                                    deltas.append(d)
+                                    thetas.append(th)
+                                    
+                                fig_lc = make_subplots(
+                                    rows=4, cols=1, 
+                                    shared_xaxes=True, 
+                                    vertical_spacing=0.08,
+                                    subplot_titles=(
+                                        f"Course de l'Action vs Strike ({t})", 
+                                        f"Prime du Contrat (Valorisation en $)", 
+                                        "Grec Directionnel (Delta)",
+                                        "Grec Temporel (Theta $/jour)"
+                                    )
+                                )
+                                
+                                # Row 1: Action vs Strike
+                                fig_lc.add_trace(go.Scatter(x=dates, y=prices, name="Prix Action", line=dict(color='#00d2ff')), row=1, col=1)
+                                fig_lc.add_hline(y=K, line_dash="dash", line_color="red", annotation_text="Strike", row=1, col=1)
+                                
+                                # Row 2: Prime BS (Totale)
+                                fig_lc.add_trace(go.Scatter(x=dates, y=bs_premiums, name="Valeur du Contrat ($)", line=dict(color='#00ff88'), fill='tozeroy', fillcolor='rgba(0,255,136,0.1)'), row=2, col=1)
+                                fig_lc.add_hline(y=buy_value, line_dash="dash", line_color="orange", annotation_text="Coût d'Achat", row=2, col=1)
+                                
+                                # Row 3: Delta
+                                fig_lc.add_trace(go.Scatter(x=dates, y=deltas, name="Delta", line=dict(color='#ff00ff')), row=3, col=1)
+                                
+                                # Row 4: Theta
+                                fig_lc.add_trace(go.Scatter(x=dates, y=thetas, name="Theta", line=dict(color='#ff3333'), fill='tozeroy', fillcolor='rgba(255,51,51,0.2)'), row=4, col=1)
+                                
+                                fig_lc.update_layout(height=900, template="plotly_dark", title_text="🧬 Dashboard Rétroactif du Cycle de Vie", margin=dict(l=20, r=20, t=60, b=20), hovermode="x unified")
+                                st.plotly_chart(fig_lc, use_container_width=True)
+                            else:
+                                st.warning("Pas assez de données historiques pour générer le graphique (Achat récent ou week-end). Revenez demain !")
+                        except Exception as e:
+                            st.error(f"Impossible de reconstruire le cycle de vie. Soit le contrat est trop ancien (avant cette mise à jour), soit une erreur est survenue : {e}")
         
         for k in keys_to_remove:
             del pf['positions'][k]
@@ -2565,6 +2642,20 @@ def page_options_academy():
     **En conclusion :**
     - En "Trading d'Options" (ce que font les Quants et la majorité des professionnels), on **revend la Prime** avant la fin. On se fait de l'argent sur l'écart de la Prime.
     - L'action n'est que le "moteur" qui fait gonfler ou dégonfler le prix de votre Prime. Et c'est justement ce moteur complexe (qui inclut aussi le temps et la peur) que Black-Scholes calcule en temps réel !
+    """)
+    
+    st.divider()
+    st.header("🧬 Partie 9 : Le Cycle de Vie Rétroactif (L'Analyse Institutionnelle)")
+    st.markdown("""
+    Analyser les Grecs à l'instant *T* (le jour de l'achat) ne suffit pas. Une option est un produit "vivant" dont le comportement se déforme de jour en jour.
+    
+    Pour gérer son risque, un Quant institutionnel doit pouvoir observer visuellement comment les Grecs et la Prime évoluent tout au long de la vie du contrat :
+    - **Le passage In-The-Money :** Voir le moment exact où la courbe du prix franchit la ligne du Strike et provoque l'explosion du Delta.
+    - **L'érosion temporelle (Theta) :** Constater que même si l'action monte légèrement, la prime peut tout de même s'effondrer dans les derniers jours si la hausse ne compense pas le "loyer" quotidien (Theta).
+    - **L'accélération directionnelle :** Comprendre visuellement pourquoi un contrat a gagné ou perdu de la valeur hier par rapport à aujourd'hui.
+    
+    > [!TIP]
+    > **L'outil Ultime :** Dans votre portefeuille virtuel (Paper Trading), nous avons intégré le bouton **"📈 Analyser le Cycle de Vie"**. Cet algorithme "On-The-Fly" télécharge l'historique de l'action depuis votre date d'achat exacte et recalcule la formule de Black-Scholes (Prime et Grecs) pour **chaque jour écoulé**. Vous disposez ainsi d'un tableau de bord rétroactif à 4 niveaux pour autopsier le comportement mathématique de votre contrat !
     """)
 
 def page_bot_config():
