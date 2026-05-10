@@ -2540,6 +2540,32 @@ def page_options_academy():
     > 
     > *Cependant, dans notre simulateur de Paper Trading, pour des raisons pédagogiques extrêmes, le bouton de revente des options européennes est volontairement bloqué pour vous faire ressentir pleinement cette contrainte temporelle !*
     """)
+    
+    st.divider()
+    st.header("🔄 Partie 8 : Le Mécanisme de Gain (Action vs Prime)")
+    st.markdown("""
+    C'est une question récurrente qui met en lumière la différence absolue entre acheter une Action et acheter une Option.
+    
+    Pour y répondre directement : **OUI, lorsque vous revendez le contrat avant son échéance, votre gain vient de l'écart des Primes (Prime de Revente - Prime d'Achat).**
+    
+    Mais attention, ces deux concepts (Prime et Prix de l'Action) sont intimement liés. Voici pourquoi :
+    
+    ### 1. Pourquoi le gain vient-il des Primes ?
+    Quand vous achetez une option, vous n'achetez pas l'action. Vous achetez un "bout de papier" (le contrat d'assurance). Sur le marché des options, ce que les traders s'échangent toute la journée, c'est ce bout de papier. La "Prime", c'est tout simplement le prix de ce bout de papier. Donc, si vous l'achetez 5$ et que vous le revendez 8$ à un autre trader, vous avez gagné 3$.
+    
+    ### 2. Mais d'où vient cette hausse de la Prime ?
+    C'est là qu'intervient le prix de l'action ! La Prime (calculée par Black-Scholes) n'évolue pas par magie. Sa valeur *dérive* (d'où le nom "produit dérivé") du comportement de l'action. La Prime de votre contrat a augmenté de 5$ à 8$ **parce que** le prix de l'action a bougé dans le bon sens. C'est ce qu'on appelle le **Delta** (l'un des Grecs) :
+    
+    - Si l'action Apple monte de 1$ et que votre Delta est de 0.50, la Prime de votre contrat va monter de 0.50$.
+    - L'écart de prix de l'action génère la hausse, mais c'est bien la revente de la Prime gonflée qui atterrit dans votre poche.
+    
+    ### 3. Et si j'attends l'échéance (l'Exercice) ?
+    Si vous gardez votre contrat jusqu'au tout dernier jour et que vous l'exercez, alors là oui, le calcul change ! Le gain viendra de l'écart entre le **Prix de l'action aujourd'hui** et le **Prix de votre Strike (K)**, auquel on déduit la Prime que vous aviez payée au début.
+    
+    **En conclusion :**
+    - En "Trading d'Options" (ce que font les Quants et la majorité des professionnels), on **revend la Prime** avant la fin. On se fait de l'argent sur l'écart de la Prime.
+    - L'action n'est que le "moteur" qui fait gonfler ou dégonfler le prix de votre Prime. Et c'est justement ce moteur complexe (qui inclut aussi le temps et la peur) que Black-Scholes calcule en temps réel !
+    """)
 
 def page_bot_config():
     st.title("🤖 Paramétrage du Bot (Headless)")
