@@ -6,6 +6,10 @@ import xgboost as xgb
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.metrics import classification_report, accuracy_score
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
@@ -17,6 +21,7 @@ import json
 import subprocess
 import optuna
 import scipy.stats as si
+from scipy.optimize import brentq
 import shap
 from tickers_db import MAJOR_STOCKS, PREDEFINED_PORTFOLIOS
 import torch
@@ -2198,6 +2203,20 @@ def black_scholes(S, K, T, r, sigma, option_type="call"):
         theta = (- (S * sigma * si.norm.pdf(d1, 0.0, 1.0)) / (2 * np.sqrt(T)) + r * K * np.exp(-r * T) * si.norm.cdf(-d2, 0.0, 1.0)) / 365
     return price, delta, gamma, theta, vega
 
+def find_strike_for_delta(S, T, r, sigma, option_type, target_delta):
+    """
+    Trouve le Strike K tel que le Delta théorique de BS correspond au target_delta.
+    target_delta doit être positif pour un Call (ex: 0.15) et négatif pour un Put (ex: -0.15).
+    """
+    def obj(K):
+        _, d, _, _, _ = black_scholes(S, K, T, r, sigma, option_type)
+        return d - target_delta
+    try:
+        K_opt = brentq(obj, S * 0.1, S * 3.0)
+        return K_opt
+    except ValueError:
+        return S # Fallback au prix actuel si aucune solution trouvée
+
 def page_options_pricing(tickers):
     st.title("🧮 Pricing d'Options (Black-Scholes)")
     st.markdown("Calculez la valeur théorique (Juste Prix) d'une option d'achat (Call) ou de vente (Put) ainsi que ses paramètres de risque (Les Greeks).")
@@ -2658,6 +2677,88 @@ def page_options_academy():
     > **L'outil Ultime :** Dans votre portefeuille virtuel (Paper Trading), nous avons intégré le bouton **"📈 Analyser le Cycle de Vie"**. Cet algorithme "On-The-Fly" télécharge l'historique de l'action depuis votre date d'achat exacte et recalcule la formule de Black-Scholes (Prime et Grecs) pour **chaque jour écoulé**. Vous disposez ainsi d'un tableau de bord rétroactif à 4 niveaux pour autopsier le comportement mathématique de votre contrat !
     """)
 
+def page_rag_gemini(tickers, gemini_api_key):
+    st.title("🧠 Analyse Fondamentale & RAG (Gemini AI)")
+    st.markdown("""
+    Ce module utilise l'Intelligence Artificielle Générative (Google Gemini) pour agir comme un **Analyste Quantitatif**. 
+    L'IA va lire les actualités récentes, les données financières, et rédiger un rapport d'expertise pour anticiper des événements comme l'**IV Crush**.
+    """)
+    
+    if not genai:
+        st.error("❌ La librairie `google-generativeai` n'est pas installée. Le système fonctionnera si vous l'installez via le terminal (`pip install google-generativeai`).")
+        return
+        
+    if not gemini_api_key:
+        st.warning("⚠️ Veuillez entrer votre Clé API Gemini dans le menu de gauche pour activer ce module.")
+        st.info("Vous pouvez en générer une gratuitement sur [Google AI Studio](https://aistudio.google.com/).")
+        return
+        
+    genai.configure(api_key=gemini_api_key)
+    
+    if not tickers:
+        st.warning("Veuillez sélectionner au moins une action dans le menu latéral.")
+        return
+        
+    selected_ticker = st.selectbox("Sélectionnez l'action à analyser", tickers)
+    
+    if st.button(f"🔍 Lancer l'Analyse Stratégique sur {selected_ticker}", use_container_width=True):
+        with st.spinner(f"Récupération des données et réflexion de l'IA sur {selected_ticker}..."):
+            try:
+                stock = yf.Ticker(selected_ticker)
+                
+                # 1. Retrieval (Extraction)
+                info = stock.info
+                news = stock.news
+                
+                company_name = info.get('longName', selected_ticker)
+                sector = info.get('sector', 'Inconnu')
+                industry = info.get('industry', 'Inconnu')
+                forward_pe = info.get('forwardPE', 'N/A')
+                div_yield = info.get('dividendYield', 'N/A')
+                
+                # Format news
+                news_text = ""
+                if news:
+                    for n in news[:5]:
+                        # Handle different formats returned by yfinance news
+                        title = n.get('content', {}).get('title', n.get('title', ''))
+                        summary = n.get('content', {}).get('summary', n.get('summary', ''))
+                        if not summary:
+                            summary = n.get('publisher', '')
+                        news_text += f"- Titre : {title}\n  Contexte : {summary}\n\n"
+                else:
+                    news_text = "Aucune actualité récente trouvée."
+                    
+                # 2. Le Prompt
+                prompt = f"""
+Agis comme un Trader Quantitatif Institutionnel expert en Options et Dérivés.
+Ton objectif est de rédiger un rapport stratégique d'analyse fondamentale sur l'action {company_name} (Ticker: {selected_ticker}).
+
+Voici les informations extraites aujourd'hui (Retrieval) :
+- Secteur : {sector} ({industry})
+- Forward P/E : {forward_pe}
+- Dividend Yield : {div_yield}
+
+Dernières actualités de la société (très important) :
+{news_text}
+
+Ta mission est de rédiger un rapport structuré en français (Markdown) contenant :
+1. **Le Sentiment Profond :** Quelle est l'ambiance générale autour de l'entreprise au vu des news ? Y a-t-il un momentum caché ?
+2. **Risque d'IV Crush & Volatilité :** Au vu des actus, y a-t-il un événement imminent (earnings, annonce produit) qui pourrait causer un pic d'Implied Volatility (IV) suivi d'un écrasement brutal (IV Crush) ?
+3. **Stratégie d'Options Recommandée :** En fonction du sentiment et de la volatilité anticipée, quelle stratégie d'options recommanderais-tu (ex: Vendre des Puts, Acheter un Straddle, Iron Condor, etc.) et pourquoi ? Sois précis sur le ratio Risque/Rendement.
+
+Ne mets pas de blabla d'introduction de chatbot, va droit au but avec un ton très professionnel, technique et institutionnel. Utilise du gras et des listes à puces.
+"""
+                # 3. Generation
+                model = genai.GenerativeModel('gemini-1.5-pro')
+                response = model.generate_content(prompt)
+                
+                st.success("Analyse terminée avec succès !")
+                st.markdown(response.text)
+                
+            except Exception as e:
+                st.error(f"Une erreur est survenue lors de l'analyse : {str(e)}")
+
 def page_bot_config():
     st.title("🤖 Paramétrage du Bot (Headless)")
     st.markdown("Configurez ici l'automatisation. Le bot s'exécutera en tâche de fond tous les soirs, s'entraînera, et vous enverra un signal via Telegram ou Discord.")
@@ -2758,6 +2859,206 @@ def page_bot_config():
             st.success("Bot démarré en tâche de fond ! Il s'entraînera chaque soir.")
             st.rerun()
 
+def page_options_backtester(tickers):
+    st.title("⏪ Backtester d'Options (Simulation Quantitative)")
+    st.markdown("""
+    Ce module est le **Graal** des Quants. Il permet de simuler des **Stratégies de Rente Systématiques** (Yield Generation).
+    Le moteur mathématique reconstruit l'historique des prix des options passées en ciblant un Delta précis, et simule l'ouverture et la fermeture des contrats jour par jour.
+    """)
+    
+    if not tickers:
+        st.warning("Veuillez sélectionner au moins une action dans le menu latéral.")
+        return
+        
+    ticker = tickers[0]
+    st.header(f"Configuration du Backtest sur {ticker}")
+    
+    c1, c2, c3, c4 = st.columns(4)
+    strat_action = c1.selectbox("Action", ["Vendre (Short)", "Acheter (Long)"])
+    strat_type = c2.selectbox("Type", ["PUT", "CALL"])
+    target_delta_abs = c3.number_input("Delta Cible (absolu)", min_value=0.01, max_value=0.99, value=0.15, step=0.01, help="0.15 signifie 15 Delta (très OTM)")
+    target_dte = c4.number_input("DTE (Jours à l'échéance)", min_value=1, max_value=365, value=45, step=1)
+    
+    c5, c6, c7, c8 = st.columns(4)
+    take_profit_pct = c5.number_input("Take Profit (% de la prime)", min_value=10, max_value=100, value=50, step=5, help="Rachète le contrat si le profit atteint X% de la prime initiale.")
+    stop_loss_pct = c6.number_input("Stop Loss (% de la prime)", min_value=100, max_value=1000, value=200, step=10, help="Clôture si la perte atteint X% de la prime initiale (ex: 200%).")
+    capital = c7.number_input("Capital Initial ($)", value=100000, step=10000)
+    period = c8.selectbox("Période d'historique", ["1y", "2y", "5y", "10y"], index=2)
+    
+    if st.button("🚀 Lancer le Backtest Systématique", use_container_width=True):
+        with st.spinner("Téléchargement de l'historique et simulation des options..."):
+            try:
+                df = yf.download(ticker, period=period, progress=False)
+                if df.empty:
+                    st.error("Pas de données trouvées.")
+                    return
+                
+                closes = df['Close']
+                if isinstance(closes, pd.DataFrame): closes = closes.iloc[:, 0]
+                
+                # Volatilité historique glissante (30 jours)
+                returns = closes.pct_change()
+                hist_vol = returns.rolling(window=30).std() * np.sqrt(252)
+                hist_vol = hist_vol.bfill()
+                
+                target_delta = target_delta_abs if strat_type == "CALL" else -target_delta_abs
+                r = 0.05
+                multiplier, _ = get_option_multiplier_and_legislation(ticker)
+                
+                cash = capital
+                equity_curve = []
+                trades = []
+                current_position = None
+                
+                pb = st.progress(0)
+                total_days = len(closes)
+                
+                for i, (date, spot) in enumerate(closes.items()):
+                    if i % 50 == 0: pb.progress(i / total_days)
+                    sigma = hist_vol.iloc[i]
+                    if sigma < 0.05: sigma = 0.05
+                    
+                    if current_position is None:
+                        # OPEN POSITION
+                        K = find_strike_for_delta(spot, target_dte/365.0, r, sigma, strat_type.lower(), target_delta)
+                        premium, _, _, _, _ = black_scholes(spot, K, target_dte/365.0, r, sigma, strat_type.lower())
+                        cost = premium * multiplier
+                        
+                        current_position = {
+                            'entry_date': date,
+                            'entry_spot': spot,
+                            'strike': K,
+                            'premium_in': premium,
+                            'cost_in': cost,
+                            'days_passed': 0,
+                            'sigma_in': sigma
+                        }
+                        
+                        if strat_action == "Vendre (Short)":
+                            cash += cost
+                        else:
+                            cash -= cost
+                            
+                        equity_curve.append(cash)
+                    
+                    else:
+                        # MANAGE POSITION
+                        current_position['days_passed'] += 1
+                        days_remaining = target_dte - current_position['days_passed']
+                        
+                        if days_remaining <= 0:
+                            # EXPIRATION
+                            if strat_type == "CALL":
+                                intrinsic = max(0, spot - current_position['strike'])
+                            else:
+                                intrinsic = max(0, current_position['strike'] - spot)
+                                
+                            settlement_value = intrinsic * multiplier
+                            
+                            if strat_action == "Vendre (Short)":
+                                cash -= settlement_value
+                                pnl = current_position['cost_in'] - settlement_value
+                            else:
+                                cash += settlement_value
+                                pnl = settlement_value - current_position['cost_in']
+                                
+                            trades.append({
+                                'entry_date': current_position['entry_date'].strftime('%Y-%m-%d'),
+                                'exit_date': date.strftime('%Y-%m-%d'),
+                                'strike': current_position['strike'],
+                                'reason': 'Expiration',
+                                'pnl': pnl
+                            })
+                            current_position = None
+                            equity_curve.append(cash)
+                            
+                        else:
+                            # CHECK TP / SL
+                            current_premium, _, _, _, _ = black_scholes(spot, current_position['strike'], days_remaining/365.0, r, sigma, strat_type.lower())
+                            current_cost = current_premium * multiplier
+                            close_position = False
+                            reason = ""
+                            current_pnl = 0
+                            
+                            if strat_action == "Vendre (Short)":
+                                current_pnl = current_position['cost_in'] - current_cost
+                                max_profit = current_position['cost_in']
+                                if current_pnl >= max_profit * (take_profit_pct / 100.0):
+                                    close_position = True
+                                    reason = f"Take Profit"
+                                elif current_pnl <= -max_profit * (stop_loss_pct / 100.0):
+                                    close_position = True
+                                    reason = f"Stop Loss"
+                            else:
+                                current_pnl = current_cost - current_position['cost_in']
+                                max_loss = current_position['cost_in']
+                                if current_pnl >= current_position['cost_in'] * (take_profit_pct / 100.0):
+                                    close_position = True
+                                    reason = f"Take Profit"
+                                elif current_pnl <= -max_loss * (stop_loss_pct / 100.0):
+                                    close_position = True
+                                    reason = f"Stop Loss"
+                                    
+                            if close_position:
+                                if strat_action == "Vendre (Short)":
+                                    cash -= current_cost
+                                else:
+                                    cash += current_cost
+                                    
+                                trades.append({
+                                    'entry_date': current_position['entry_date'].strftime('%Y-%m-%d'),
+                                    'exit_date': date.strftime('%Y-%m-%d'),
+                                    'strike': current_position['strike'],
+                                    'reason': reason,
+                                    'pnl': current_pnl
+                                })
+                                current_position = None
+                                equity_curve.append(cash)
+                            else:
+                                if strat_action == "Vendre (Short)":
+                                    mtm_equity = cash - current_cost
+                                else:
+                                    mtm_equity = cash + current_cost
+                                equity_curve.append(mtm_equity)
+                
+                pb.empty()
+                
+                # --- RESULTS ---
+                st.divider()
+                st.header("📊 Résultats de la Simulation")
+                
+                if not trades:
+                    st.warning("Aucun trade n'a pu être clôturé sur cette période.")
+                    return
+                    
+                trades_df = pd.DataFrame(trades)
+                total_trades = len(trades_df)
+                winning_trades = len(trades_df[trades_df['pnl'] > 0])
+                win_rate = winning_trades / total_trades if total_trades > 0 else 0
+                total_pnl = trades_df['pnl'].sum()
+                
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Capital Final", f"{equity_curve[-1]:,.2f} $", f"{(equity_curve[-1] - capital):+,.2f} $")
+                col2.metric("Total Trades", total_trades)
+                col3.metric("Win Rate", f"{win_rate:.2%}")
+                col4.metric("Profit Net Moyen / Trade", f"{(total_pnl / total_trades):.2f} $")
+                
+                dates = closes.index
+                bnh = (closes / closes.iloc[0]) * capital
+                
+                fig = make_subplots(rows=1, cols=1)
+                fig.add_trace(go.Scatter(x=dates, y=equity_curve, name="Stratégie Options", line=dict(color='#00ff88', width=2)))
+                fig.add_trace(go.Scatter(x=dates, y=bnh, name="Buy & Hold (Action)", line=dict(color='#00d2ff', width=1, dash='dot')))
+                
+                fig.update_layout(title="Évolution du Portefeuille (Equity Curve)", template="plotly_dark", height=500, hovermode="x unified")
+                st.plotly_chart(fig, use_container_width=True)
+                
+                with st.expander("📝 Journal des Transactions (Trades Log)"):
+                    st.dataframe(trades_df, use_container_width=True)
+                    
+            except Exception as e:
+                st.error(f"Erreur durant la simulation : {e}")
+
 # --- FONCTION PRINCIPALE ---
 def main():
     st.sidebar.title("🧭 Menu Principal")
@@ -2765,7 +3066,9 @@ def main():
         "📈 Terminal de Trading",
         "🕹️ Paper Trading (Virtuel)",
         "🕹️ Paper Trading (Options)",
+        "⏪ Backtester Systématique (Options)",
         "🤖 Paramétrage du Bot (Headless)",
+        "🧠 Analyse RAG (Gemini)",
         "🏢 Fondamentaux Financiers",
         "🧮 Options & Dérivés (Pricing)",
         "🎓 Académie: Stratégie & Risques",
@@ -2778,6 +3081,9 @@ def main():
     
     st.sidebar.divider()
     st.sidebar.header("⚙️ Configuration Globale")
+    
+    gemini_api_key = st.sidebar.text_input("🔑 Clé API Gemini (Optionnel)", type="password", help="Nécessaire uniquement pour le module d'Analyse RAG.")
+    
     
     # --- NOUVEAU : Sélection rapide de portefeuilles ---
     portfolio_choice = st.sidebar.selectbox(
@@ -2845,8 +3151,12 @@ def main():
         page_paper_trading()
     elif menu == "🕹️ Paper Trading (Options)":
         page_options_paper_trading()
+    elif menu == "⏪ Backtester Systématique (Options)":
+        page_options_backtester(tickers)
     elif menu == "🤖 Paramétrage du Bot (Headless)":
         page_bot_config()
+    elif menu == "🧠 Analyse RAG (Gemini)":
+        page_rag_gemini(tickers, gemini_api_key)
     elif menu == "🏢 Fondamentaux Financiers":
         page_fundamentals(tickers)
     elif menu == "🧮 Options & Dérivés (Pricing)":
