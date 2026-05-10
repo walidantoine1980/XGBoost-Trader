@@ -1248,6 +1248,61 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
                         st.write(f"Capital: **{initial_capital * w:,.2f} $**")
                     idx += 1
             st.divider()
+            
+            # --- AJOUT: BOUTON D'INVESTISSEMENT ---
+            st.subheader("🛒 Exécuter l'Investissement (Paper Trading)")
+            st.markdown("Appliquez mathématiquement ces pondérations à votre portefeuille virtuel en un clic.")
+            if st.button("💰 Acheter ce Portefeuille", use_container_width=True):
+                pf = load_portfolio()
+                total_to_invest = initial_capital
+                
+                if pf['cash'] < total_to_invest:
+                    st.error(f"Fonds insuffisants ! Vous essayez d'investir {total_to_invest:,.2f} $ mais vous n'avez que {pf['cash']:,.2f} $ en liquidités.")
+                else:
+                    with st.status("Exécution des ordres sur le marché...") as status_exec:
+                        for t, w in bl_weights.items():
+                            if t in tickers and w > 0.01: # Si l'action fait partie de la sélection et a un poids > 1%
+                                amount = total_to_invest * w
+                                st.write(f"Passage d'ordre pour {t} ({amount:,.2f} $)...")
+                                try:
+                                    current_price = yf.download(t, period="1d", progress=False)['Close'].iloc[-1]
+                                    if isinstance(current_price, pd.Series):
+                                        current_price = current_price.iloc[0]
+                                        
+                                    exec_price = float(current_price) * 1.001 # 0.1% de Slippage simulé
+                                    qty = amount / exec_price
+                                    commission = amount * 0.0005 # Frais de courtage simulés (0.05%)
+                                    total_cost = amount + commission
+                                    
+                                    pf['cash'] -= total_cost
+                                    
+                                    if t in pf['positions']:
+                                        old_qty = pf['positions'][t]['qty']
+                                        old_avg = pf['positions'][t]['avg_price']
+                                        new_qty = old_qty + qty
+                                        new_avg = ((old_qty * old_avg) + (qty * exec_price)) / new_qty
+                                        pf['positions'][t]['qty'] = new_qty
+                                        pf['positions'][t]['avg_price'] = new_avg
+                                    else:
+                                        pf['positions'][t] = {'qty': qty, 'avg_price': exec_price}
+                                        
+                                    pf['history'].append({
+                                        'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                        'action': 'BUY (Black-Litterman WFA)',
+                                        'ticker': t,
+                                        'qty': qty,
+                                        'price': exec_price,
+                                        'total': total_cost,
+                                        'pnl': 0.0
+                                    })
+                                except Exception as e:
+                                    st.error(f"Erreur d'exécution pour {t}: {e}")
+                                    
+                        save_portfolio(pf)
+                        status_exec.update(label="✅ Portefeuille exécuté avec succès !", state="complete")
+                    st.success("Les positions ont été ajoutées à votre Simulateur Paper Trading. Allez dans le menu '🕹️ Paper Trading (Virtuel)' pour les suivre !")
+            st.divider()
+
         all_port_strategy = pd.DataFrame()
         all_port_market = pd.DataFrame()
         
