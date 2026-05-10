@@ -592,11 +592,19 @@ def convert_google_to_yahoo_ticker(ticker):
     suffix = exchange_mapping.get(exchange, "")
     return f"{symbol}{suffix}"
 
+def get_company_name_from_yahoo(yahoo_ticker):
+    from tickers_db import MAJOR_STOCKS
+    for name, google_ticker in MAJOR_STOCKS.items():
+        if google_ticker != "CUSTOM":
+            if convert_google_to_yahoo_ticker(google_ticker) == yahoo_ticker:
+                clean_name = name.split(" (")[0]
+                return f"{clean_name} ({yahoo_ticker})"
+    return yahoo_ticker
 
 # --- MODES D'AFFICHAGE ---
 
 def run_single_mode(ticker, period, interval, initial_capital, optimize_model, use_wfa=False, wfa_train_window="5Y", wfa_step="6M", wfa_start_date=None, wfa_end_date=None):
-    st.subheader(f"Analyse Individuelle : {ticker}")
+    st.subheader(f"Analyse Individuelle : {get_company_name_from_yahoo(ticker)}")
     model_path = f"models/{ticker}_model.pkl"
     
     if f"trader_{ticker}" not in st.session_state:
@@ -1252,7 +1260,7 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
                     amount = initial_capital * w
                     
                     with cols[idx % 4]:
-                        st.metric(label=f"Action {t}", value=f"{w*100:.1f}%", delta=f"{diff*100:+.1f}% (Ajustement IA)")
+                        st.metric(label=get_company_name_from_yahoo(t), value=f"{w*100:.1f}%", delta=f"{diff*100:+.1f}% (Ajustement IA)")
                         st.write(f"Capital: **{amount:,.2f} $**")
                         st.write(f"Probabilité IA: **{prob*100:.1f}%**")
                         
@@ -1860,7 +1868,7 @@ def page_paper_trading():
             
             total_positions_value += value
             
-            with st.expander(f"📦 {t} | Valeur: {value:.2f} $ | P&L: {pnl:+.2f} $ ({pnl_pct:+.2f}%)"):
+            with st.expander(f"📦 {get_company_name_from_yahoo(t)} | Valeur: {value:.2f} $ | P&L: {pnl:+.2f} $ ({pnl_pct:+.2f}%)"):
                 col1, col2 = st.columns(2)
                 col1.write(f"**Quantité:** {qty}")
                 col1.write(f"**Prix d'Achat Moyen:** {avg_price:.2f} $")
