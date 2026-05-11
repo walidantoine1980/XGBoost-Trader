@@ -1316,7 +1316,8 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
                 if t in tickers:
                     m_w = market_weights.get(t, 0)
                     diff = w - m_w
-                    prob = probs_dict.get(t, 0.5)
+                    prob = probs_dict.get(t)
+                    if prob is None: prob = 0.5
                     amount = initial_capital * w
                     
                     with cols[idx % 4]:
