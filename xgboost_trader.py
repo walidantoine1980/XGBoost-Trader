@@ -2751,6 +2751,7 @@ Ne mets pas de blabla d'introduction de chatbot, va droit au but avec un ton tr�
 """
                 # 3. Generation
                 success = False
+                last_error = ""
                 models_to_try = [
                     'gemini-1.5-pro-latest',
                     'gemini-1.5-pro',
@@ -2768,11 +2769,12 @@ Ne mets pas de blabla d'introduction de chatbot, va droit au but avec un ton tr�
                         st.info(f"Modèle utilisé avec succès : `{m_name}`")
                         success = True
                         break
-                    except Exception:
+                    except Exception as e:
+                        last_error = str(e)
                         continue
                         
                 if not success:
-                    st.error("Aucun modèle Gemini n'a pu traiter la requête. Vérifiez les droits de votre clé API.")
+                    st.error(f"Aucun modèle Gemini n'a pu traiter la requête. Raison technique renvoyée par Google : {last_error}")
                     return
                 st.success("Analyse terminée avec succès !")
                 st.markdown(response.text)
