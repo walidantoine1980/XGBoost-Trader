@@ -26,6 +26,44 @@ import shap
 from tickers_db import MAJOR_STOCKS, PREDEFINED_PORTFOLIOS
 import torch
 from transformers import pipeline
+import glob
+
+# Chargement dynamique des watchlists CSV depuis le dossier WatchList/
+def load_custom_watchlists():
+    custom_portfolios = {}
+    if os.path.exists("WatchList"):
+        for filepath in glob.glob("WatchList/*.csv"):
+            try:
+                df = pd.read_csv(filepath, sep=';', encoding='utf-8', on_bad_lines='skip')
+                if len(df.columns) < 2:
+                    df = pd.read_csv(filepath, sep=',', encoding='utf-8', on_bad_lines='skip')
+                
+                filename = os.path.basename(filepath)
+                portfolio_name = filename.split('_Watchlist')[0] if '_Watchlist' in filename else filename.replace('.csv', '')
+                
+                portfolio_items = []
+                for _, row in df.iterrows():
+                    name = str(row.get('Name', 'Unknown')).strip()
+                    symbol = str(row.get('Symbol', '')).strip()
+                    if not symbol or symbol.lower() == 'nan':
+                        continue
+                        
+                    if symbol.endswith('.O') or symbol.endswith('.K') or symbol.endswith('.N') or symbol.endswith('.OQ'):
+                        clean_symbol = symbol.rsplit('.', 1)[0]
+                    else:
+                        clean_symbol = symbol
+                        
+                    display_name = f"{name} ({clean_symbol})"
+                    MAJOR_STOCKS[display_name] = clean_symbol
+                    portfolio_items.append(display_name)
+                    
+                if portfolio_items:
+                    custom_portfolios[f"📂 {portfolio_name}"] = portfolio_items
+            except Exception:
+                pass
+    return custom_portfolios
+
+PREDEFINED_PORTFOLIOS.update(load_custom_watchlists())
 
 @st.cache_resource(show_spinner="Chargement du modèle Deep Learning NLP (FinBERT)...")
 def load_finbert():
@@ -1987,7 +2025,8 @@ def page_options_paper_trading():
             
             total_positions_value += value
             
-            with st.expander(f"📦 {qty} Contrat(s) {opt_type.upper()} sur {t} | Valeur: {value:.2f} $ | P&L: {pnl:+.2f} $ ({pnl_pct:+.2f}%)"):
+            is_expanded = (st.session_state.get('show_lifecycle_for') == contract_id)
+            with st.expander(f"📦 {qty} Contrat(s) {opt_type.upper()} sur {t} | Valeur: {value:.2f} $ | P&L: {pnl:+.2f} $ ({pnl_pct:+.2f}%)", expanded=is_expanded):
                 col1, col2 = st.columns(2)
                 col1.write(f"**Strike (K):** {K} $")
                 col1.write(f"**Prime d'Achat:** {avg_price:.2f} $")
@@ -2781,13 +2820,13 @@ Ne mets pas de blabla d'introduction de chatbot, va droit au but avec un ton tr�
                 all_errors = {}
                 # Les anciens modèles 1.0 et 1.5 ont été dépréciés par Google.
                 models_to_try = [
+                    'gemini-3-pro-preview',
                     'gemini-2.5-pro',
-                    'gemini-2.5-flash',
-                    'gemini-3.0-pro'
+                    'gemini-2.5-flash'
                 ]
                 
                 response = None
-                client = genai.Client(api_key=gemini_api_key)
+                client = genai.Client(api_key=gemini_api_key.strip())
                 for m_name in models_to_try:
                     try:
                         response = client.models.generate_content(model=m_name, contents=prompt)
@@ -3132,7 +3171,7 @@ def main():
     st.sidebar.divider()
     st.sidebar.header("⚙️ Configuration Globale")
     
-    gemini_api_key = st.sidebar.text_input("🔑 Clé API Gemini (Optionnel)", type="password", value="AIzaSyCl_KiR1xpOqYyUkXFlp_ibyTaGtDZrakM", help="Nécessaire uniquement pour le module d'Analyse RAG.")
+    gemini_api_key = st.sidebar.text_input("🔑 Clé API Gemini (Optionnel)", type="password", help="Nécessaire uniquement pour le module d'Analyse RAG. Ne jamais écrire en dur dans le code !")
     
     
     # --- NOUVEAU : Sélection rapide de portefeuilles ---
