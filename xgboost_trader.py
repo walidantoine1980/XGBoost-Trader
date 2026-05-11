@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 try:
-    import google.generativeai as genai
+    from google import genai
 except ImportError:
     genai = None
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
@@ -2692,9 +2692,7 @@ def page_rag_gemini(tickers, gemini_api_key):
         st.warning("⚠️ Veuillez entrer votre Clé API Gemini dans le menu de gauche pour activer ce module.")
         st.info("Vous pouvez en générer une gratuitement sur [Google AI Studio](https://aistudio.google.com/).")
         return
-        
-    genai.configure(api_key=gemini_api_key)
-    
+    # Configure inside the loop now
     if not tickers:
         st.warning("Veuillez sélectionner au moins une action dans le menu latéral.")
         return
@@ -2729,6 +2727,30 @@ def page_rag_gemini(tickers, gemini_api_key):
                 else:
                     news_text = "Aucune actualité récente trouvée."
                     
+                # 1.5 Calcul Quantitatif (XGBoost)
+                prob_text = "Non calculé"
+                try:
+                    df_quant = yf.download(selected_ticker, period="2y", progress=False)
+                    if not df_quant.empty:
+                        df_quant = add_technical_indicators(df_quant)
+                        df_quant = add_macro_indicators(df_quant)
+                        df_quant.dropna(inplace=True)
+                        
+                        trader_key = f"port_trader_{selected_ticker}"
+                        if trader_key in st.session_state:
+                            trader_quant = st.session_state[trader_key]
+                            features_quant = trader_quant.feature_names
+                        else:
+                            trader_quant = XGBoostTrader(ticker=selected_ticker)
+                            features_quant = trader_quant.train(df_quant, optimize=False, use_wfa=False)
+                            
+                        prob_quant = trader_quant.predict(df_quant.iloc[-1:], features_quant)
+                        if prob_quant is not None:
+                            direction = "HAUSSIÈRE" if prob_quant > 0.5 else "BAISSIÈRE"
+                            prob_text = f"{prob_quant:.1%} de probabilité {direction}"
+                except Exception:
+                    pass
+
                 # 2. Le Prompt
                 prompt = f"""
 Agis comme un Trader Quantitatif Institutionnel expert en Options et Dérivés.
@@ -2742,10 +2764,15 @@ Voici les informations extraites aujourd'hui (Retrieval) :
 Dernières actualités de la société (très important) :
 {news_text}
 
-Ta mission est de rédiger un rapport structuré en français (Markdown) contenant :
+Information Cruciale - Prédiction Quantitative (XGBoost) :
+Notre algorithme de Machine Learning (XGBoost) vient d'analyser techniquement cette action.
+Prédiction mathématique : {prob_text}
+
+Ta mission est de fusionner ces deux visions pour devenir le Portfolio Manager ultime. Rédige un rapport structuré en français (Markdown) contenant :
 1. **Le Sentiment Profond :** Quelle est l'ambiance générale autour de l'entreprise au vu des news ? Y a-t-il un momentum caché ?
-2. **Risque d'IV Crush & Volatilité :** Au vu des actus, y a-t-il un événement imminent (earnings, annonce produit) qui pourrait causer un pic d'Implied Volatility (IV) suivi d'un écrasement brutal (IV Crush) ?
-3. **Stratégie d'Options Recommandée :** En fonction du sentiment et de la volatilité anticipée, quelle stratégie d'options recommanderais-tu (ex: Vendre des Puts, Acheter un Straddle, Iron Condor, etc.) et pourquoi ? Sois précis sur le ratio Risque/Rendement.
+2. **Confrontation IA vs Marché :** La prédiction mathématique de XGBoost est-elle alignée avec les fondamentaux actuels, ou y a-t-il une divergence dangereuse ?
+3. **Risque d'IV Crush & Volatilité :** Au vu des actus, y a-t-il un événement imminent qui pourrait causer un pic d'Implied Volatility (IV) suivi d'un écrasement brutal ?
+4. **Stratégie d'Options Recommandée :** En fonction du sentiment, de XGBoost et de la volatilité, quelle stratégie d'options recommanderais-tu (ex: Vendre des Puts, Iron Condor, etc.) et pourquoi ?
 
 Ne mets pas de blabla d'introduction de chatbot, va droit au but avec un ton très professionnel, technique et institutionnel. Utilise du gras et des listes à puces.
 """
@@ -2754,18 +2781,16 @@ Ne mets pas de blabla d'introduction de chatbot, va droit au but avec un ton tr�
                 all_errors = {}
                 # Les anciens modèles 1.0 et 1.5 ont été dépréciés par Google.
                 models_to_try = [
-                    'gemini-3-pro-preview',
                     'gemini-2.5-pro',
                     'gemini-2.5-flash',
-                    'gemini-2.0-flash',
-                    'gemini-pro-latest'
+                    'gemini-3.0-pro'
                 ]
                 
                 response = None
+                client = genai.Client(api_key=gemini_api_key)
                 for m_name in models_to_try:
                     try:
-                        model = genai.GenerativeModel(m_name)
-                        response = model.generate_content(prompt)
+                        response = client.models.generate_content(model=m_name, contents=prompt)
                         st.info(f"Modèle utilisé avec succès : `{m_name}`")
                         success = True
                         break
