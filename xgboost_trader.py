@@ -82,15 +82,18 @@ def get_macro_data(period, interval):
         spy_raw = yf.download("SPY", period=period, interval=interval, progress=False)
         vix_raw = yf.download("^VIX", period=period, interval=interval, progress=False)
         tnx_raw = yf.download("^TNX", period=period, interval=interval, progress=False)
+        dxy_raw = yf.download("DX-Y.NYB", period=period, interval=interval, progress=False)
         
         spy = spy_raw['Close'].iloc[:, 0] if isinstance(spy_raw.columns, pd.MultiIndex) else spy_raw['Close']
         vix = vix_raw['Close'].iloc[:, 0] if isinstance(vix_raw.columns, pd.MultiIndex) else vix_raw['Close']
         tnx = tnx_raw['Close'].iloc[:, 0] if isinstance(tnx_raw.columns, pd.MultiIndex) else tnx_raw['Close']
+        dxy = dxy_raw['Close'].iloc[:, 0] if isinstance(dxy_raw.columns, pd.MultiIndex) else dxy_raw['Close']
         
         macro = pd.DataFrame(index=spy.index)
         macro['SPY_Return'] = spy.pct_change()
         macro['VIX'] = vix
         macro['TNX'] = tnx
+        macro['DXY'] = dxy
         return macro.ffill()
     except Exception:
         return None
@@ -133,6 +136,33 @@ def get_news_sentiment(ticker):
         return avg_polarity, articles
     except Exception:
         return 0, []
+
+@st.cache_data(ttl=3600)
+def get_implied_volatility(ticker, spot_price=None):
+    """Récupère la volatilité implicite moyenne (IV) des options ATM les plus proches."""
+    try:
+        stock = yf.Ticker(ticker)
+        dates = stock.options
+        if not dates:
+            return 0.20 # Fallback
+        
+        # Prendre la première échéance (front month)
+        chain = stock.option_chain(dates[0])
+        
+        if spot_price:
+            # Filtrer les calls autour de la monnaie (ATM)
+            calls = chain.calls
+            calls['dist'] = abs(calls['strike'] - spot_price)
+            atm_calls = calls.sort_values('dist').head(3)
+            iv = atm_calls['impliedVolatility'].mean()
+        else:
+            iv = chain.calls['impliedVolatility'].median()
+            
+        if pd.isna(iv) or iv == 0:
+            return 0.20
+        return float(iv)
+    except Exception:
+        return 0.20
 
 
 
@@ -395,7 +425,7 @@ class MLTrader:
         base_features = ['Returns', 'SMA_20', 'SMA_50', 'SMA_200', 'EMA_9', 'Vol_20', 'RSI', 'MACD', 'Signal_Line', 
                          'BB_Upper', 'BB_Lower', 'BB_Width', 'ATR', 'ADX', 'Volume_Ratio', 'OBV', 'Stoch_K', 'ROC', 
                          'VWAP', 'Lag_1', 'Lag_2', 'Lag_3']
-        macro_features = ['SPY_Return', 'VIX', 'TNX']
+        macro_features = ['SPY_Return', 'VIX', 'TNX', 'DXY']
         
         features = [f for f in base_features + macro_features if f in data.columns]
         X = data[features]
@@ -2001,10 +2031,7 @@ def page_options_paper_trading():
             try:
                 df = yf.download(t, period="1y", progress=False)
                 current_price = df['Close'].iloc[-1].item() if isinstance(df['Close'].iloc[-1], pd.Series) else df['Close'].iloc[-1]
-                returns = df['Close'].pct_change().dropna()
-                sigma = returns.std() * np.sqrt(252)
-                if isinstance(sigma, pd.Series): sigma = sigma.iloc[0].item()
-                elif hasattr(sigma, 'item'): sigma = sigma.item()
+                sigma = get_implied_volatility(t, current_price)
             except:
                 current_price = data['underlying_price_at_buy']
                 sigma = 0.20
@@ -2964,14 +2991,15 @@ def page_options_backtester(tickers):
     st.header(f"Configuration du Backtest sur {ticker}")
     
     c1, c2, c3, c4 = st.columns(4)
-    strat_action = c1.selectbox("Action", ["Vendre (Short)", "Acheter (Long)"])
-    strat_type = c2.selectbox("Type", ["PUT", "CALL"])
-    target_delta_abs = c3.number_input("Delta Cible (absolu)", min_value=0.01, max_value=0.99, value=0.15, step=0.01, help="0.15 signifie 15 Delta (très OTM)")
-    target_dte = c4.number_input("DTE (Jours à l'échéance)", min_value=1, max_value=365, value=45, step=1)
+    strategy = c1.selectbox("Stratégie", ["Single Leg", "Credit Spread", "Straddle", "Iron Condor"])
+    strat_type = c2.selectbox("Direction (Type)", ["PUT", "CALL"]) if strategy in ["Single Leg", "Credit Spread"] else None
+    strat_action = c3.selectbox("Action", ["Vendre (Short)", "Acheter (Long)"]) if strategy == "Single Leg" else None
+    target_delta_abs = c4.number_input("Delta Cible (absolu)", min_value=0.01, max_value=0.99, value=0.15, step=0.01, help="Delta ciblé pour les options vendues (ex: 0.15)")
+    target_dte = st.number_input("DTE (Jours à l'échéance)", min_value=1, max_value=365, value=45, step=1)
     
     c5, c6, c7, c8 = st.columns(4)
-    take_profit_pct = c5.number_input("Take Profit (% de la prime)", min_value=10, max_value=100, value=50, step=5, help="Rachète le contrat si le profit atteint X% de la prime initiale.")
-    stop_loss_pct = c6.number_input("Stop Loss (% de la prime)", min_value=100, max_value=1000, value=200, step=10, help="Clôture si la perte atteint X% de la prime initiale (ex: 200%).")
+    take_profit_pct = c5.number_input("Take Profit (% de la prime max)", min_value=10, max_value=100, value=50, step=5)
+    stop_loss_pct = c6.number_input("Stop Loss (% de la prime max)", min_value=10, max_value=1000, value=200, step=10)
     capital = c7.number_input("Capital Initial ($)", value=100000, step=10000)
     period = c8.selectbox("Période d'historique", ["1y", "2y", "5y", "10y"], index=2)
     
@@ -2991,7 +3019,6 @@ def page_options_backtester(tickers):
                 hist_vol = returns.rolling(window=30).std() * np.sqrt(252)
                 hist_vol = hist_vol.bfill()
                 
-                target_delta = target_delta_abs if strat_type == "CALL" else -target_delta_abs
                 r = 0.05
                 multiplier, _ = get_option_multiplier_and_legislation(ticker)
                 
@@ -3010,25 +3037,51 @@ def page_options_backtester(tickers):
                     
                     if current_position is None:
                         # OPEN POSITION
-                        K = find_strike_for_delta(spot, target_dte/365.0, r, sigma, strat_type.lower(), target_delta)
-                        premium, _, _, _, _ = black_scholes(spot, K, target_dte/365.0, r, sigma, strat_type.lower())
-                        cost = premium * multiplier
-                        
+                        legs = []
+                        if strategy == "Single Leg":
+                            td = target_delta_abs if strat_type == "CALL" else -target_delta_abs
+                            K = find_strike_for_delta(spot, target_dte/365.0, r, sigma, strat_type.lower(), td)
+                            legs.append({'type': strat_type.lower(), 'action': 'short' if 'Vendre' in strat_action else 'long', 'strike': K})
+                        elif strategy == "Credit Spread":
+                            td_short = target_delta_abs if strat_type == "CALL" else -target_delta_abs
+                            td_long = (target_delta_abs/2.0) if strat_type == "CALL" else -(target_delta_abs/2.0)
+                            K_short = find_strike_for_delta(spot, target_dte/365.0, r, sigma, strat_type.lower(), td_short)
+                            K_long = find_strike_for_delta(spot, target_dte/365.0, r, sigma, strat_type.lower(), td_long)
+                            legs.append({'type': strat_type.lower(), 'action': 'short', 'strike': K_short})
+                            legs.append({'type': strat_type.lower(), 'action': 'long', 'strike': K_long})
+                        elif strategy == "Straddle":
+                            legs.append({'type': 'call', 'action': 'long', 'strike': spot})
+                            legs.append({'type': 'put', 'action': 'long', 'strike': spot})
+                        elif strategy == "Iron Condor":
+                            Kc_s = find_strike_for_delta(spot, target_dte/365.0, r, sigma, 'call', target_delta_abs)
+                            Kc_l = find_strike_for_delta(spot, target_dte/365.0, r, sigma, 'call', target_delta_abs/2.0)
+                            Kp_s = find_strike_for_delta(spot, target_dte/365.0, r, sigma, 'put', -target_delta_abs)
+                            Kp_l = find_strike_for_delta(spot, target_dte/365.0, r, sigma, 'put', -target_delta_abs/2.0)
+                            
+                            legs.append({'type': 'call', 'action': 'short', 'strike': Kc_s})
+                            legs.append({'type': 'call', 'action': 'long', 'strike': Kc_l})
+                            legs.append({'type': 'put', 'action': 'short', 'strike': Kp_s})
+                            legs.append({'type': 'put', 'action': 'long', 'strike': Kp_l})
+                            
+                        total_cost_in = 0
+                        for leg in legs:
+                            p, _, _, _, _ = black_scholes(spot, leg['strike'], target_dte/365.0, r, sigma, leg['type'])
+                            leg['premium_in'] = p
+                            leg_cost = p * multiplier
+                            if leg['action'] == 'short':
+                                total_cost_in += leg_cost
+                            else:
+                                total_cost_in -= leg_cost
+                                
                         current_position = {
                             'entry_date': date,
                             'entry_spot': spot,
-                            'strike': K,
-                            'premium_in': premium,
-                            'cost_in': cost,
+                            'legs': legs,
+                            'net_cost_in': total_cost_in,
                             'days_passed': 0,
-                            'sigma_in': sigma
                         }
                         
-                        if strat_action == "Vendre (Short)":
-                            cash += cost
-                        else:
-                            cash -= cost
-                            
+                        cash += total_cost_in
                         equity_curve.append(cash)
                     
                     else:
@@ -3038,24 +3091,19 @@ def page_options_backtester(tickers):
                         
                         if days_remaining <= 0:
                             # EXPIRATION
-                            if strat_type == "CALL":
-                                intrinsic = max(0, spot - current_position['strike'])
-                            else:
-                                intrinsic = max(0, current_position['strike'] - spot)
-                                
-                            settlement_value = intrinsic * multiplier
+                            closing_cashflow = 0
+                            for leg in current_position['legs']:
+                                intrinsic = max(0, spot - leg['strike']) if leg['type'] == 'call' else max(0, leg['strike'] - spot)
+                                val = intrinsic * multiplier
+                                closing_cashflow += (-val if leg['action'] == 'short' else val)
+                                    
+                            cash += closing_cashflow
+                            pnl = current_position['net_cost_in'] + closing_cashflow
                             
-                            if strat_action == "Vendre (Short)":
-                                cash -= settlement_value
-                                pnl = current_position['cost_in'] - settlement_value
-                            else:
-                                cash += settlement_value
-                                pnl = settlement_value - current_position['cost_in']
-                                
                             trades.append({
                                 'entry_date': current_position['entry_date'].strftime('%Y-%m-%d'),
                                 'exit_date': date.strftime('%Y-%m-%d'),
-                                'strike': current_position['strike'],
+                                'strategy': strategy,
                                 'reason': 'Expiration',
                                 'pnl': pnl
                             })
@@ -3064,51 +3112,48 @@ def page_options_backtester(tickers):
                             
                         else:
                             # CHECK TP / SL
-                            current_premium, _, _, _, _ = black_scholes(spot, current_position['strike'], days_remaining/365.0, r, sigma, strat_type.lower())
-                            current_cost = current_premium * multiplier
+                            closing_cashflow = 0
+                            for leg in current_position['legs']:
+                                p, _, _, _, _ = black_scholes(spot, leg['strike'], days_remaining/365.0, r, sigma, leg['type'])
+                                val = p * multiplier
+                                closing_cashflow += (-val if leg['action'] == 'short' else val)
+                                    
+                            current_pnl = current_position['net_cost_in'] + closing_cashflow
+                            
                             close_position = False
                             reason = ""
-                            current_pnl = 0
                             
-                            if strat_action == "Vendre (Short)":
-                                current_pnl = current_position['cost_in'] - current_cost
-                                max_profit = current_position['cost_in']
+                            if current_position['net_cost_in'] > 0: # Stratégie Crédit (Vente)
+                                max_profit = current_position['net_cost_in']
                                 if current_pnl >= max_profit * (take_profit_pct / 100.0):
                                     close_position = True
-                                    reason = f"Take Profit"
+                                    reason = "Take Profit"
                                 elif current_pnl <= -max_profit * (stop_loss_pct / 100.0):
                                     close_position = True
-                                    reason = f"Stop Loss"
-                            else:
-                                current_pnl = current_cost - current_position['cost_in']
-                                max_loss = current_position['cost_in']
-                                if current_pnl >= current_position['cost_in'] * (take_profit_pct / 100.0):
-                                    close_position = True
-                                    reason = f"Take Profit"
-                                elif current_pnl <= -max_loss * (stop_loss_pct / 100.0):
-                                    close_position = True
-                                    reason = f"Stop Loss"
-                                    
+                                    reason = "Stop Loss"
+                            else: # Stratégie Débit (Achat)
+                                max_loss = abs(current_position['net_cost_in'])
+                                if max_loss > 0:
+                                    if current_pnl >= max_loss * (take_profit_pct / 100.0):
+                                        close_position = True
+                                        reason = "Take Profit"
+                                    elif current_pnl <= -max_loss * (stop_loss_pct / 100.0):
+                                        close_position = True
+                                        reason = "Stop Loss"
+                                        
                             if close_position:
-                                if strat_action == "Vendre (Short)":
-                                    cash -= current_cost
-                                else:
-                                    cash += current_cost
-                                    
+                                cash += closing_cashflow
                                 trades.append({
                                     'entry_date': current_position['entry_date'].strftime('%Y-%m-%d'),
                                     'exit_date': date.strftime('%Y-%m-%d'),
-                                    'strike': current_position['strike'],
+                                    'strategy': strategy,
                                     'reason': reason,
                                     'pnl': current_pnl
                                 })
                                 current_position = None
                                 equity_curve.append(cash)
                             else:
-                                if strat_action == "Vendre (Short)":
-                                    mtm_equity = cash - current_cost
-                                else:
-                                    mtm_equity = cash + current_cost
+                                mtm_equity = cash + closing_cashflow
                                 equity_curve.append(mtm_equity)
                 
                 pb.empty()
