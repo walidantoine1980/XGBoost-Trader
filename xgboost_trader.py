@@ -742,7 +742,7 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model, u
         base_features = ['Returns', 'SMA_20', 'SMA_50', 'SMA_200', 'EMA_9', 'Vol_20', 'RSI', 'MACD', 'Signal_Line', 
                          'BB_Upper', 'BB_Lower', 'BB_Width', 'ATR', 'ADX', 'Volume_Ratio', 'OBV', 'Stoch_K', 'ROC', 
                          'VWAP', 'Lag_1', 'Lag_2', 'Lag_3']
-        macro_features = ['SPY_Return', 'VIX', 'TNX']
+        macro_features = ['SPY_Return', 'VIX', 'TNX', 'DXY']
         features = [f for f in base_features + macro_features if f in df.columns]
         prob = trader.predict(last_row, features)
         st.progress(float(prob))
@@ -2312,7 +2312,7 @@ def page_options_pricing(tickers):
             
             last_row = df.iloc[-1:]
             base_features = ['Returns', 'SMA_20', 'SMA_50', 'SMA_200', 'EMA_9', 'Vol_20', 'RSI', 'MACD', 'Signal_Line', 'BB_Upper', 'BB_Lower', 'BB_Width', 'ATR', 'ADX', 'Volume_Ratio', 'OBV', 'Stoch_K', 'ROC', 'VWAP', 'Lag_1', 'Lag_2', 'Lag_3']
-            macro_features = ['SPY_Return', 'VIX', 'TNX']
+            macro_features = ['SPY_Return', 'VIX', 'TNX', 'DXY']
             features = [f for f in base_features + macro_features if f in df.columns]
             prob = trader.predict(last_row, features)
             
