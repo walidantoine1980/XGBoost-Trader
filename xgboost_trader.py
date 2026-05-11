@@ -2751,14 +2751,12 @@ Ne mets pas de blabla d'introduction de chatbot, va droit au but avec un ton tr�
 """
                 # 3. Generation
                 success = False
-                last_error = ""
+                all_errors = {}
                 models_to_try = [
                     'gemini-1.5-pro-latest',
                     'gemini-1.5-pro',
                     'gemini-1.5-flash',
-                    'gemini-1.0-pro',
-                    'gemini-pro',
-                    'gemini-ultra'
+                    'gemini-1.0-pro'
                 ]
                 
                 response = None
@@ -2770,11 +2768,13 @@ Ne mets pas de blabla d'introduction de chatbot, va droit au but avec un ton tr�
                         success = True
                         break
                     except Exception as e:
-                        last_error = str(e)
+                        all_errors[m_name] = str(e)
                         continue
                         
                 if not success:
-                    st.error(f"Aucun modèle Gemini n'a pu traiter la requête. Raison technique renvoyée par Google : {last_error}")
+                    st.error("Aucun modèle Gemini n'a pu traiter la requête. Voici les raisons exactes renvoyées par Google pour chaque modèle testé :")
+                    for m, err in all_errors.items():
+                        st.warning(f"**{m}** : {err}")
                     return
                 st.success("Analyse terminée avec succès !")
                 st.markdown(response.text)
