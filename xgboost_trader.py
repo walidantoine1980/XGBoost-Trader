@@ -2685,7 +2685,7 @@ def page_rag_gemini(tickers, gemini_api_key):
     """)
     
     if not genai:
-        st.error("❌ La librairie `google-generativeai` n'est pas installée. Le système fonctionnera si vous l'installez via le terminal (`pip install google-generativeai`).")
+        st.error("❌ La librairie `google-genai` n'est pas installée. Le système fonctionnera si vous l'installez via le terminal (`pip install google-genai`).")
         return
         
     if not gemini_api_key:
@@ -3132,7 +3132,7 @@ def main():
     st.sidebar.divider()
     st.sidebar.header("⚙️ Configuration Globale")
     
-    gemini_api_key = st.sidebar.text_input("🔑 Clé API Gemini (Optionnel)", type="password", help="Nécessaire uniquement pour le module d'Analyse RAG.")
+    gemini_api_key = st.sidebar.text_input("🔑 Clé API Gemini (Optionnel)", type="password", value="AIzaSyCl_KiR1xpOqYyUkXFlp_ibyTaGtDZrakM", help="Nécessaire uniquement pour le module d'Analyse RAG.")
     
     
     # --- NOUVEAU : Sélection rapide de portefeuilles ---
