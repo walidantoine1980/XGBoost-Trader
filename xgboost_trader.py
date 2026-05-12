@@ -1340,7 +1340,8 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
                 
             status.update(label="✅ Portefeuille Institutionnel généré et optimisé !", state="complete")
             
-    is_ready = all(f"port_trader_{t}" in st.session_state for t in tickers)
+    valid_tickers = [t for t in tickers if f"port_trader_{t}" in st.session_state]
+    is_ready = len(valid_tickers) > 0
     
     if is_ready:
         if "bl_weights" in st.session_state:
@@ -1349,10 +1350,10 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
             market_weights = st.session_state["market_weights"]
             probs_dict = st.session_state.get("probs_dict", {})
             
-            cols = st.columns(min(len(tickers), 4))
+            cols = st.columns(min(len(valid_tickers), 4))
             idx = 0
             for t, w in bl_weights.items():
-                if t in tickers:
+                if t in valid_tickers:
                     m_w = market_weights.get(t, 0)
                     diff = w - m_w
                     prob = probs_dict.get(t)
@@ -1400,10 +1401,10 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
         all_port_strategy = pd.DataFrame()
         all_port_market = pd.DataFrame()
         
-        for t in tickers:
+        for t in valid_tickers:
             trader = st.session_state[f"port_trader_{t}"]
             # Récupère le capital alloué ou un capital équitable par défaut
-            capital_for_t = st.session_state.get(f"port_capital_{t}", initial_capital/len(tickers))
+            capital_for_t = st.session_state.get(f"port_capital_{t}", initial_capital/len(valid_tickers))
             bt = trader.backtest_results
             
             if all_port_strategy.empty:
