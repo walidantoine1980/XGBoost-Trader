@@ -28,42 +28,7 @@ import torch
 from transformers import pipeline
 import glob
 
-# Chargement dynamique des watchlists CSV depuis le dossier WatchList/
-def load_custom_watchlists():
-    custom_portfolios = {}
-    if os.path.exists("WatchList"):
-        for filepath in glob.glob("WatchList/*.csv"):
-            try:
-                df = pd.read_csv(filepath, sep=';', encoding='utf-8', on_bad_lines='skip')
-                if len(df.columns) < 2:
-                    df = pd.read_csv(filepath, sep=',', encoding='utf-8', on_bad_lines='skip')
-                
-                filename = os.path.basename(filepath)
-                portfolio_name = filename.split('_Watchlist')[0] if '_Watchlist' in filename else filename.replace('.csv', '')
-                
-                portfolio_items = []
-                for _, row in df.iterrows():
-                    name = str(row.get('Name', 'Unknown')).strip()
-                    symbol = str(row.get('Symbol', '')).strip()
-                    if not symbol or symbol.lower() == 'nan':
-                        continue
-                        
-                    if symbol.endswith('.O') or symbol.endswith('.K') or symbol.endswith('.N') or symbol.endswith('.OQ'):
-                        clean_symbol = symbol.rsplit('.', 1)[0]
-                    else:
-                        clean_symbol = symbol
-                        
-                    display_name = f"{name} ({clean_symbol})"
-                    MAJOR_STOCKS[display_name] = clean_symbol
-                    portfolio_items.append(display_name)
-                    
-                if portfolio_items:
-                    custom_portfolios[f"📂 {portfolio_name}"] = portfolio_items
-            except Exception:
-                pass
-    return custom_portfolios
-
-PREDEFINED_PORTFOLIOS.update(load_custom_watchlists())
+# Le chargement des portefeuilles personnalisés est maintenant géré dynamiquement par tickers_db.py
 
 @st.cache_resource(show_spinner="Chargement du modèle Deep Learning NLP (FinBERT)...")
 def load_finbert():

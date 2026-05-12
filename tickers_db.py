@@ -32,23 +32,35 @@ def _load_dynamic_watchlists():
     
     portfolios = {}
     if os.path.exists(watchlists_dir):
+        import pandas as pd
         for file in os.listdir(watchlists_dir):
             if not file.endswith('.csv'): continue
             list_name = f"📂 {file.split('_Watchlist')[0]}"
             stocks = []
             
             try:
-                with open(os.path.join(watchlists_dir, file), 'r', encoding='utf-8-sig') as f:
-                    reader = csv.DictReader(f, delimiter=';')
-                    for row in reader:
-                        n = row.get('Name') or row.get('Nom')
-                        if not n: continue
-                        # Ignorer le Forex et les cryptos
-                        if row.get('Exchange') == 'FX' or 'EUR' in n or 'USD' in n or 'Futures' in n: continue
+                filepath = os.path.join(watchlists_dir, file)
+                df = pd.read_csv(filepath, sep=';', encoding='utf-8', on_bad_lines='skip')
+                if len(df.columns) < 2:
+                    df = pd.read_csv(filepath, sep=',', encoding='utf-8', on_bad_lines='skip')
+                    
+                for _, row in df.iterrows():
+                    name = str(row.get('Name', row.get('Nom', 'Unknown'))).strip()
+                    symbol = str(row.get('Symbol', row.get('Symbole', ''))).strip()
+                    if not symbol or symbol.lower() == 'nan' or symbol.lower() == 'none': 
+                        continue
                         
-                        match = _get_best_match(n)
-                        if match and match not in stocks:
-                            stocks.append(match)
+                    if symbol.endswith('.O') or symbol.endswith('.K') or symbol.endswith('.N') or symbol.endswith('.OQ'):
+                        clean_symbol = symbol.rsplit('.', 1)[0]
+                    else:
+                        clean_symbol = symbol
+                        
+                    display_name = f"{name} ({clean_symbol})"
+                    MAJOR_STOCKS[display_name] = clean_symbol
+                    
+                    if display_name not in stocks:
+                        stocks.append(display_name)
+                        
                 if stocks:
                     portfolios[list_name] = stocks
             except Exception:
