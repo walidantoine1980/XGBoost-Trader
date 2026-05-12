@@ -24,8 +24,7 @@ import scipy.stats as si
 from scipy.optimize import brentq
 import shap
 from tickers_db import MAJOR_STOCKS, PREDEFINED_PORTFOLIOS
-import torch
-from transformers import pipeline
+
 import glob
 
 # Le chargement des portefeuilles personnalisés est maintenant géré dynamiquement par tickers_db.py
@@ -33,6 +32,8 @@ import glob
 @st.cache_resource(show_spinner="Chargement du modèle Deep Learning NLP (FinBERT)...")
 def load_finbert():
     try:
+        import torch
+        from transformers import pipeline
         # Configuration sur CPU ou GPU selon la disponibilité
         device = 0 if torch.cuda.is_available() else -1
         return pipeline("sentiment-analysis", model="ProsusAI/finbert", device=device)
