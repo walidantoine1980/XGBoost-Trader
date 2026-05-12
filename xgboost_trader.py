@@ -703,6 +703,8 @@ def run_single_mode(ticker, period, interval, initial_capital, optimize_model, u
             return
         if isinstance(df_raw.columns, pd.MultiIndex):
             df_raw.columns = df_raw.columns.droplevel(1)
+        # S'assurer qu'il n'y a pas de colonnes dupliquées (arrive si yfinance télécharge plusieurs tickers)
+        df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()].copy()
             
         macro_df = get_macro_data(period, interval)
 
@@ -1282,11 +1284,18 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
                 if not df_raw.empty:
                     if isinstance(df_raw.columns, pd.MultiIndex):
                         df_raw.columns = df_raw.columns.droplevel(1)
+                    # S'assurer qu'il n'y a pas de colonnes dupliquées (évite les DataFrame dans df_raw['Close'])
+                    df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()].copy()
+                    
                     data_dict[t] = df_raw
                     ret = df_raw['Close'].pct_change().dropna()
                     returns_dict[t] = ret
                     vol_hist = ret.std()
-                    volatility_dict[t] = vol_hist if vol_hist > 0 else 0.01
+                    
+                    if pd.isna(vol_hist) or float(vol_hist) <= 0:
+                        volatility_dict[t] = 0.01
+                    else:
+                        volatility_dict[t] = float(vol_hist)
 
             # --- 1. Poids d'Équilibre (Risk Parity) ---
             sum_inv_vol = sum(1/v for v in volatility_dict.values())
