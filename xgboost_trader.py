@@ -1407,6 +1407,9 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
             capital_for_t = st.session_state.get(f"port_capital_{t}", initial_capital/len(valid_tickers))
             bt = trader.backtest_results
             
+            if bt is None or bt.empty:
+                continue
+                
             if all_port_strategy.empty:
                 all_port_strategy['Total'] = bt['Cum_Strategy_Return'] * capital_for_t
                 all_port_market['Total'] = bt['Cum_Market_Return'] * capital_for_t
@@ -1414,29 +1417,32 @@ def run_portfolio_mode(tickers, period, interval, initial_capital, optimize_mode
                 all_port_strategy['Total'] = all_port_strategy['Total'].add(bt['Cum_Strategy_Return'] * capital_for_t, fill_value=0)
                 all_port_market['Total'] = all_port_market['Total'].add(bt['Cum_Market_Return'] * capital_for_t, fill_value=0)
                 
-        all_port_strategy = all_port_strategy.dropna()
-        all_port_market = all_port_market.dropna()
-        
-        fig_perf = go.Figure()
-        fig_perf.add_trace(go.Scatter(x=all_port_strategy.index, y=all_port_strategy['Total'], name='Portefeuille Quantitatif ($)', line=dict(color='#00ff00', width=2)))
-        fig_perf.add_trace(go.Scatter(x=all_port_market.index, y=all_port_market['Total'], name='Portefeuille Buy & Hold ($)', line=dict(color='gray', dash='dash')))
-        fig_perf.update_layout(height=500, template="plotly_dark", title="Évolution Globale du Portefeuille (Risk Parity)", yaxis_title="Valeur en $")
-        st.plotly_chart(fig_perf, use_container_width=True)
-        
-        final_strategy = all_port_strategy['Total'].iloc[-1]
-        final_market = all_port_market['Total'].iloc[-1]
-        profit_strategy = final_strategy - initial_capital
-        profit_market = final_market - initial_capital
-        diff_profit = profit_strategy - profit_market
-        
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Capital Final (IA)", f"{final_strategy:,.2f} $", delta=f"{profit_strategy:+,.2f} $")
-        m2.metric("Capital Final (Marché)", f"{final_market:,.2f} $", delta=f"{profit_market:+,.2f} $", delta_color="off")
-        
-        if diff_profit > 0:
-            m3.metric("Surperformance Globale", f"+{diff_profit:,.2f} $", delta="L'IA bat le marché", delta_color="normal")
+        if all_port_strategy.empty:
+            st.warning("⚠️ Pas assez de données de backtest disponibles pour générer le graphique de synthèse. Certaines actions n'ont peut-être pas assez d'historique.")
         else:
-            m3.metric("Sous-performance Globale", f"{diff_profit:,.2f} $", delta="Le marché bat l'IA", delta_color="inverse")
+            all_port_strategy = all_port_strategy.dropna()
+            all_port_market = all_port_market.dropna()
+            
+            fig_perf = go.Figure()
+            fig_perf.add_trace(go.Scatter(x=all_port_strategy.index, y=all_port_strategy['Total'], name='Portefeuille Quantitatif ($)', line=dict(color='#00ff00', width=2)))
+            fig_perf.add_trace(go.Scatter(x=all_port_market.index, y=all_port_market['Total'], name='Portefeuille Buy & Hold ($)', line=dict(color='gray', dash='dash')))
+            fig_perf.update_layout(height=500, template="plotly_dark", title="Évolution Globale du Portefeuille (Risk Parity)", yaxis_title="Valeur en $")
+            st.plotly_chart(fig_perf, use_container_width=True)
+            
+            final_strategy = all_port_strategy['Total'].iloc[-1]
+            final_market = all_port_market['Total'].iloc[-1]
+            profit_strategy = final_strategy - initial_capital
+            profit_market = final_market - initial_capital
+            diff_profit = profit_strategy - profit_market
+            
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Capital Final (IA)", f"{final_strategy:,.2f} $", delta=f"{profit_strategy:+,.2f} $")
+            m2.metric("Capital Final (Marché)", f"{final_market:,.2f} $", delta=f"{profit_market:+,.2f} $", delta_color="off")
+            
+            if diff_profit > 0:
+                m3.metric("Surperformance Globale", f"+{diff_profit:,.2f} $", delta="L'IA bat le marché", delta_color="normal")
+            else:
+                m3.metric("Sous-performance Globale", f"{diff_profit:,.2f} $", delta="Le marché bat l'IA", delta_color="inverse")
     else:
         st.warning("Veuillez cliquer sur Entraîner pour générer la synthèse globale.")
 
