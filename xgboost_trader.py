@@ -1947,6 +1947,21 @@ def page_paper_trading():
                 col1.write(f"**Prix d'Achat Moyen:** {avg_price:.2f} $")
                 col2.write(f"**Prix Actuel:** {current_price:.2f} $")
                 
+                # --- AVIS EXPERT ---
+                st.markdown("---")
+                st.markdown("##### 🧠 Avis Expert (Money Management)")
+                if pnl_pct >= 20.0:
+                    st.success(f"**Take Profit Fortement Recommandé.** Vous avez sécurisé +{pnl_pct:.2f}% de plus-value. En finance quantitative, un tel gain justifie une prise de bénéfices (totale ou partielle) pour lisser la courbe de performance.")
+                elif pnl_pct >= 10.0:
+                    st.info(f"**Sécurisation Suggérée.** Belle performance de +{pnl_pct:.2f}%. Pensez à remonter votre Stop-Loss (Trailing Stop) au niveau de votre prix d'achat pour garantir un 'Risk-Free Trade' (Trade gratuit).")
+                elif pnl_pct <= -15.0:
+                    st.error(f"**Stop-Loss Critique !** Perte sévère de {pnl_pct:.2f}%. Les mathématiques du Drawdown sont cruelles : il faudra un gain beaucoup plus fort pour rattraper cette perte. Clôturez la position pour préserver le capital.")
+                elif pnl_pct <= -7.0:
+                    st.warning(f"**Zone de Danger.** Votre position affiche {pnl_pct:.2f}%. Assurez-vous que votre thèse d'investissement initiale est toujours valide, sinon n'hésitez pas à couper court à la perte.")
+                else:
+                    st.write(f"**Maintien (Hold).** La position oscille dans sa zone neutre ({pnl_pct:+.2f}%). Laissez le trade respirer pour éviter de sur-réagir au bruit du marché à court terme.")
+                st.markdown("---")
+                
                 if st.button(f"🔴 Liquider {t} au marché", key=f"liq_{t}"):
                     # Simulation Event-Driven (Slippage + Commissions)
                     exec_price = current_price * 0.9990 # -0.10% Slippage
